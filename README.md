@@ -89,6 +89,11 @@ sql_query = converter.convert(predql_query, execute=False)
 table = converter.convert(predql_query, execute=True)
 ```
 
+### 4. Examples
+
+For more comprehensive examples and use cases, check out the [`relbench_exp.ipynb`](./experiments/relbench_exp.ipynb) notebook.  
+You can also check the [`predql-tasks`](https://github.com/kolesole/predql-tasks) repository for more tasks.
+
 ## 📐 Query Language
 
 ### 📌 Static query design
