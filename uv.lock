@@ -1782,57 +1782,6 @@ wheels = [
 ]
 
 [[package]]
-name = "predql"
-version = "0.0.2"
-source = { editable = "." }
-dependencies = [
-    { name = "antlr4-python3-runtime" },
-    { name = "duckdb" },
-    { name = "pandas" },
-]
-
-[package.optional-dependencies]
-dev = [
-    { name = "antlr4-tools" },
-    { name = "ipykernel" },
-    { name = "ipywidgets" },
-    { name = "jupyter" },
-    { name = "pytest" },
-    { name = "pytest-cov" },
-    { name = "relbench" },
-    { name = "ruff" },
-    { name = "tqdm" },
-]
-notebook = [
-    { name = "ipykernel" },
-    { name = "ipywidgets" },
-    { name = "jupyter" },
-]
-test = [
-    { name = "pytest" },
-    { name = "pytest-cov" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "antlr4-python3-runtime", specifier = ">=4.13.2" },
-    { name = "antlr4-tools", marker = "extra == 'dev'", specifier = ">=0.2.1" },
-    { name = "duckdb", specifier = ">=1.0.0" },
-    { name = "ipykernel", marker = "extra == 'notebook'", specifier = ">=7.1.0" },
-    { name = "ipywidgets", marker = "extra == 'notebook'", specifier = ">=8.1.0" },
-    { name = "jupyter", marker = "extra == 'notebook'", specifier = ">=1.0.0" },
-    { name = "pandas", specifier = ">=2.2.0" },
-    { name = "predql", extras = ["notebook"], marker = "extra == 'dev'" },
-    { name = "predql", extras = ["test"], marker = "extra == 'dev'" },
-    { name = "pytest", marker = "extra == 'test'", specifier = ">=8.0.0" },
-    { name = "pytest-cov", marker = "extra == 'test'", specifier = ">=4.1.0" },
-    { name = "relbench", marker = "extra == 'dev'", specifier = ">=1.1.0" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.14.10" },
-    { name = "tqdm", marker = "extra == 'dev'", specifier = ">=4.66.0" },
-]
-provides-extras = ["test", "notebook", "dev"]
-
-[[package]]
 name = "prometheus-client"
 version = "0.24.1"
 source = { registry = "https://pypi.org/simple" }
@@ -2376,6 +2325,57 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/20/53/7c7e784abfa500a2b6b583b147ee4bb5a2b3747a9166bab52fec4b5b5e7d/rpds_py-0.30.0-cp314-cp314t-win32.whl", hash = "sha256:dc824125c72246d924f7f796b4f63c1e9dc810c7d9e2355864b3c3a73d59ade0", size = 211570, upload-time = "2025-11-30T20:24:12.735Z" },
     { url = "https://files.pythonhosted.org/packages/d0/02/fa464cdfbe6b26e0600b62c528b72d8608f5cc49f96b8d6e38c95d60c676/rpds_py-0.30.0-cp314-cp314t-win_amd64.whl", hash = "sha256:27f4b0e92de5bfbc6f86e43959e6edd1425c33b5e69aab0984a72047f2bcf1e3", size = 226532, upload-time = "2025-11-30T20:24:14.634Z" },
 ]
+
+[[package]]
+name = "rtgl"
+version = "0.0.2"
+source = { editable = "." }
+dependencies = [
+    { name = "antlr4-python3-runtime" },
+    { name = "duckdb" },
+    { name = "pandas" },
+]
+
+[package.optional-dependencies]
+dev = [
+    { name = "antlr4-tools" },
+    { name = "ipykernel" },
+    { name = "ipywidgets" },
+    { name = "jupyter" },
+    { name = "pytest" },
+    { name = "pytest-cov" },
+    { name = "relbench" },
+    { name = "ruff" },
+    { name = "tqdm" },
+]
+notebook = [
+    { name = "ipykernel" },
+    { name = "ipywidgets" },
+    { name = "jupyter" },
+]
+test = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "antlr4-python3-runtime", specifier = ">=4.13.2" },
+    { name = "antlr4-tools", marker = "extra == 'dev'", specifier = ">=0.2.1" },
+    { name = "duckdb", specifier = ">=1.0.0" },
+    { name = "ipykernel", marker = "extra == 'notebook'", specifier = ">=7.1.0" },
+    { name = "ipywidgets", marker = "extra == 'notebook'", specifier = ">=8.1.0" },
+    { name = "jupyter", marker = "extra == 'notebook'", specifier = ">=1.0.0" },
+    { name = "pandas", specifier = ">=2.2.0" },
+    { name = "pytest", marker = "extra == 'test'", specifier = ">=8.0.0" },
+    { name = "pytest-cov", marker = "extra == 'test'", specifier = ">=4.1.0" },
+    { name = "relbench", marker = "extra == 'dev'", specifier = ">=1.1.0" },
+    { name = "rtgl", extras = ["notebook"], marker = "extra == 'dev'" },
+    { name = "rtgl", extras = ["test"], marker = "extra == 'dev'" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.14.10" },
+    { name = "tqdm", marker = "extra == 'dev'", specifier = ">=4.66.0" },
+]
+provides-extras = ["test", "notebook", "dev"]
 
 [[package]]
 name = "ruff"

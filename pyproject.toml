@@ -3,13 +3,14 @@ requires = ["flit_core>=3.4"]
 build-backend = "flit_core.buildapi"
 
 [project]
-name = "predql"
+name = "rtgl"
 version = "0.0.2"
-description = "PredQL: A framework providing a predictive query language for task generation in Relational Deep Learning"
+description = "RTGL: A framework providing a Relational Task Generation Language for Relational Deep Learning"
 authors = [{ name = "Oleksii Kolesnichenko", email = "oleksii.kolesnichenko@gmail.com" }]
 readme = "README.md"
 requires-python = ">=3.12"
 keywords = [
+    "relational-task-generation-language",
     "predictive-query-language",
     "sql",
     "relational-deep-learning",
@@ -36,8 +37,8 @@ notebook = [
     "ipywidgets>=8.1.0"
 ]
 dev = [
-    "predql[test]",
-    "predql[notebook]",
+    "rtgl[test]",
+    "rtgl[notebook]",
     "antlr4-tools>=0.2.1",
     "relbench>=1.1.0",
     "tqdm>=4.66.0",
@@ -45,13 +46,13 @@ dev = [
 ]
 
 [project.urls]
-Repository = "https://github.com/kolesole/PredQL"
-Issues = "https://github.com/kolesole/PredQL/issues"
+Repository = "https://github.com/kolesole/RTGL"
+Issues = "https://github.com/kolesole/RTGL/issues"
 
 [tool.ruff]
 line-length = 121
 target-version = "py312"
-extend-exclude = ["experiments", "showcase", "tasks", "tests", "predql/parser/gen/**",]
+extend-exclude = ["experiments", "showcase", "tasks", "tests", "rtgl/parser/gen/**",]
 
 [tool.ruff.lint]
 select = [

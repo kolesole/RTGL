@@ -3,8 +3,8 @@ from io import StringIO
 import pandas as pd
 import pytest
 
-from predql.base import Database, Table
-from predql.converter import SConverter, TConverter
+from rtgl.base import Database, Table
+from rtgl.converter import SConverter, TConverter
 
 
 @pytest.fixture(scope="session")
