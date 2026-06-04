@@ -37,6 +37,8 @@ jobs:
       name: pypi
       url: https://pypi.org/project/rtgl
     permissions:
+      # Use token auth instead of OIDC trusted publishing because trusted publishing
+      # currently fails for this project with `invalid-pending-publisher`.
       contents: read
     steps:
       - name: Download all the dists
@@ -47,6 +49,8 @@ jobs:
       - name: Publish distribution 📦 to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
+          # Requires PYPI_API_TOKEN secret configured in repository settings with
+          # a token from https://pypi.org/manage/account/token/
           password: ${{ secrets.PYPI_API_TOKEN }}
 
   github-release:
