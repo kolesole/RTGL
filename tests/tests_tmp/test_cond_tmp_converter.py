@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 
 
-@pytest.mark.parametrize("pql_cond", [
+@pytest.mark.parametrize("rtgl_cond", [
     ("!="),
     ("<"),
     ("<="),
@@ -15,18 +15,18 @@ import pytest
     (">=")
 ])
 def test_num_cond_tmp(temporal_converter,
-                      pql_cond):
-    pql_query = f"""
-        PREDICT AVG(grades.grade, 0, 10, DAYS) {pql_cond} 2.0
+                      rtgl_cond):
+    rtgl_query = f"""
+        PREDICT AVG(grades.grade, 0, 10, DAYS) {rtgl_cond} 2.0
         FOR EACH students.studentId;
     """
-    res_table = temporal_converter.convert(pql_query, execute=True)
+    res_table = temporal_converter.convert(rtgl_query, execute=True)
     res_df = res_table.df
     res_fkey_col_to_pkey_table = res_table.fkey_col_to_pkey_table
     res_pkey_col = res_table.pkey_col
     res_time_col = res_table.time_col
 
-    match pql_cond:
+    match rtgl_cond:
         case "!=":
             ref_data = """
                 fk, timestamp,  label
@@ -102,7 +102,7 @@ def test_num_cond_tmp(temporal_converter,
     assert res_time_col == "timestamp"
 
 
-@pytest.mark.parametrize("pql_cond", [
+@pytest.mark.parametrize("rtgl_cond", [
     ("CONTAINS"),
     ("NOT CONTAINS"),
     ("LIKE"),
@@ -112,18 +112,18 @@ def test_num_cond_tmp(temporal_converter,
     ("=")
 ])
 def test_str_cond_tmp(temporal_converter,
-                      pql_cond):
-    pql_query = f"""
-        PREDICT FIRST(favSubjects.subject, 0, 10, DAYS) {pql_cond} "P"
+                      rtgl_cond):
+    rtgl_query = f"""
+        PREDICT FIRST(favSubjects.subject, 0, 10, DAYS) {rtgl_cond} "P"
         FOR EACH students.studentId;
     """
-    res_table = temporal_converter.convert(pql_query, execute=True)
+    res_table = temporal_converter.convert(rtgl_query, execute=True)
     res_df = res_table.df
     res_fkey_col_to_pkey_table = res_table.fkey_col_to_pkey_table
     res_pkey_col = res_table.pkey_col
     res_time_col = res_table.time_col
 
-    match pql_cond:
+    match rtgl_cond:
         case "CONTAINS":
             ref_data = """
                 fk, timestamp,  label
@@ -209,23 +209,23 @@ def test_str_cond_tmp(temporal_converter,
     assert res_time_col == "timestamp"
 
 
-@pytest.mark.parametrize("pql_cond", [
+@pytest.mark.parametrize("rtgl_cond", [
     ("IS NOT NULL"),
     ("IS NULL")
 ])
 def test_null_cond_tmp(temporal_converter,
-                       pql_cond):
-    pql_query = f"""
-        PREDICT LAST(grades.grade, 0, 10, DAYS) {pql_cond}
+                       rtgl_cond):
+    rtgl_query = f"""
+        PREDICT LAST(grades.grade, 0, 10, DAYS) {rtgl_cond}
         FOR EACH students.studentId;
     """
-    res_table = temporal_converter.convert(pql_query, execute=True)
+    res_table = temporal_converter.convert(rtgl_query, execute=True)
     res_df = res_table.df
     res_fkey_col_to_pkey_table = res_table.fkey_col_to_pkey_table
     res_pkey_col = res_table.pkey_col
     res_time_col = res_table.time_col
 
-    match pql_cond:
+    match rtgl_cond:
         case "IS NULL":
             ref_data = """
                 fk, timestamp,  label

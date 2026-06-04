@@ -6,11 +6,11 @@ import pandas as pd
 import pytest
 
 # def test_stat_where_tmp(temporal_converter):
-#     pql_query = """
+#     rtgl_query = """
 #         PREDICT AVG(grades.grade WHERE studyInf.favSubject CONTAINS "S", 0, 10, DAYS)
 #         FOR EACH students.studentId;
 #     """
-#     res_table = temporal_converter.convert(pql_query)
+#     res_table = temporal_converter.convert(rtgl_query)
 #     res_df = res_table.df()
 #     res_fkey_col_to_pkey_table = res_table.fkey_col_to_pkey_table
 #     res_pkey_col = res_table.pkey_col
@@ -57,12 +57,12 @@ import pytest
 
 
 def test_common_simple_where_tmp(temporal_converter):
-    pql_query = """
+    rtgl_query = """
         PREDICT AVG(grades.grade, 0, 10, DAYS)
         FOR EACH students.studentId
         WHERE LAST(grades.grade, 0, 10, DAYS) IS NOT NULL;
     """
-    res_table = temporal_converter.convert(pql_query, execute=True)
+    res_table = temporal_converter.convert(rtgl_query, execute=True)
     res_df = res_table.df
     res_fkey_col_to_pkey_table = res_table.fkey_col_to_pkey_table
     res_pkey_col = res_table.pkey_col
@@ -89,26 +89,26 @@ def test_common_simple_where_tmp(temporal_converter):
     assert res_time_col == "timestamp"
 
 
-@pytest.mark.parametrize("pql_op", [
+@pytest.mark.parametrize("rtgl_op", [
     ("AND"),
     ("OR")
 ])
 def test_common_nested_where_tmp(temporal_converter,
-                                 pql_op):
-    pql_query = f"""
+                                 rtgl_op):
+    rtgl_query = f"""
         PREDICT AVG(grades.grade, 0, 10, DAYS)
         FOR EACH students.studentId
         WHERE LAST(grades.grade, 0, 10, DAYS) IS NOT NULL
-        {pql_op} (FIRST(favSubjects.subject, 0, 10, DAYS) IS NULL
+        {rtgl_op} (FIRST(favSubjects.subject, 0, 10, DAYS) IS NULL
         OR FIRST(favSubjects.subject, 0, 10, DAYS) CONTAINS "P");
     """
-    res_table = temporal_converter.convert(pql_query, execute=True)
+    res_table = temporal_converter.convert(rtgl_query, execute=True)
     res_df = res_table.df
     res_fkey_col_to_pkey_table = res_table.fkey_col_to_pkey_table
     res_pkey_col = res_table.pkey_col
     res_time_col = res_table.time_col
 
-    match pql_op:
+    match rtgl_op:
         case "AND":
             ref_data = """
                 fk, timestamp,  label

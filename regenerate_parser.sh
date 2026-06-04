@@ -6,7 +6,7 @@
 source .venv/bin/activate
 
 # Navigate to grammar directory
-cd predql/parser
+cd rtgl/parser
 
 mkdir -p gen
 
@@ -19,11 +19,10 @@ sys.argv = [
     '-Dlanguage=Python3', 
     '-visitor', 
     '-o', 'gen',
-    'ParserPredQL.g4', 
-    'LexerPredQL.g4'
+    'ParserRTGL.g4', 
+    'LexerRTGL.g4'
 ]; 
 tool()
 "
 
 echo "Parser files regenerated successfully!"
-

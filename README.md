@@ -1,13 +1,13 @@
-# PredQL
+# RTGL
 
-**PredQL** (Predictive Query Language) is a Python framework for writing compact, expressive predictive queries over relational data, especially for Relational Deep Learning.
+**RTGL** (Relational Task Generation Language) is a Python framework for writing compact, expressive predictive queries over relational data, especially for Relational Deep Learning.
 
 It lets you write shorter, more expressive queries by abstracting temporal joins and complex aggregations.
 
 ## 🧠 Features
 
 - 🎯 **ANTLR-based Parser** 
-  - Lexer and parser for PredQL syntax
+  - Lexer and parser for RTGL syntax
 
 - 🌳 **Structured parse-tree visitor**
   - Converts parsed queries into normalized dictionaries with source positions.
@@ -25,29 +25,29 @@ It lets you write shorter, more expressive queries by abstracting temporal joins
 
 ## ⚙️ Installation
 
-Install PredQL via pip:
+Install RTGL via pip:
 
 ```bash
-pip install predql
+pip install rtgl
 ```
 
 ## 🚀 Quickstart
 
-### 1. Build your database as [RelBench](https://github.com/snap-stanford/relbench) `Database` object or use simplified PredQL version 
+### 1. Build your database as [RelBench](https://github.com/snap-stanford/relbench) `Database` object or use simplified RTGL version 
 
 ```python
 # path to classes
-from predql.base import Database, Table
+from rtgl.base import Database, Table
 ```
 
 ### 2. Static query with `SConverter`
 
 ```python
-from predql.converter import SConverter
+from rtgl.converter import SConverter
 
 converter = SConverter(db)
 
-predql_query = """
+rtgl_query = """
     PREDICT COUNT_DISTINCT(votes.* 
         WHERE votes.votetypeid == 2)
     FOR EACH posts.* WHERE posts.PostTypeId == 1
@@ -56,17 +56,17 @@ predql_query = """
 """
 
 # SQL only
-sql_query = converter.convert(predql_query, execute=False)
+sql_query = converter.convert(rtgl_query, execute=False)
 
 # execute and get Table(fk, label)
-table = converter.convert(predql_query, execute=True)
+table = converter.convert(rtgl_query, execute=True)
 ```
 
 ### 3. Temporal query with `TConverter`
 
 ```python
 import pandas as pd
-from predql.converter import TConverter
+from rtgl.converter import TConverter
 
 timestamps = pd.Series(...) # define timestamps for which prediction must be made
 converter = TConverter(db, timestamps)
@@ -74,7 +74,7 @@ converter = TConverter(db, timestamps)
 # also, it is possible to update prediction timestamps later without recreating converter
 converter.set_timestamps(new_timestamps)
 
-predql_query = """
+rtgl_query = """
     PREDICT COUNT_DISTINCT(votes.* 
         WHERE votes.votetypeid == 2, 0, 91, DAYS)
     FOR EACH posts.* WHERE posts.PostTypeId == 1
@@ -83,16 +83,16 @@ predql_query = """
 """
 
 # SQL only
-sql_query = converter.convert(predql_query, execute=False)
+sql_query = converter.convert(rtgl_query, execute=False)
 
 # execute and get Table(fk, timestamp, label)
-table = converter.convert(predql_query, execute=True)
+table = converter.convert(rtgl_query, execute=True)
 ```
 
 ### 4. Examples
 
 For more comprehensive examples and use cases, check out the [`relbench_exp.ipynb`](./experiments/relbench_exp.ipynb) notebook.  
-You can also check the [`predql-tasks`](https://github.com/kolesole/predql-tasks) repository for more tasks.
+You can also check the [`rtgl-tasks`](https://github.com/kolesole/rtgl-tasks) repository for more tasks.
 
 ## 📐 Query Language
 
@@ -139,7 +139,7 @@ FOR EACH <entity_table>.<primary_key> [WHERE <static_condition | static_nested_e
 ## 🏗️ Architecture
 
 ```text
-PredQL Query String
+RTGL Query String
     ↓
 [Lexer] -> Tokens
     ↓

@@ -1,12 +1,12 @@
-"""Helper utilities for PredQL showcase notebooks."""
+"""Helper utilities for RTGL showcase notebooks."""
 
 from antlr4 import CommonTokenStream, InputStream, TerminalNode
 
-from predql.base import Database
-from predql.converter import Converter, SConverter, TConverter
-from predql.parser.gen.LexerPredQL import LexerPredQL
-from predql.parser.gen.ParserPredQL import ParserPredQL
-from predql.visitor import Visitor
+from rtgl.base import Database
+from rtgl.converter import Converter, SConverter, TConverter
+from rtgl.parser.gen.LexerRTGL import LexerRTGL
+from rtgl.parser.gen.ParserRTGL import ParserRTGL
+from rtgl.visitor import Visitor
 
 
 def print_tree(node, parser):
@@ -23,9 +23,9 @@ def print_tree(node, parser):
 
 def parse_query(query: str):
     input_stream = InputStream(query)
-    lexer = LexerPredQL(input_stream)
+    lexer = LexerRTGL(input_stream)
     token_stream = CommonTokenStream(lexer)
-    parser = ParserPredQL(token_stream)
+    parser = ParserRTGL(token_stream)
 
     tree = parser.query()
 
@@ -40,19 +40,19 @@ def parse_query(query: str):
     return tree
 
 class ConverterShowcaseHelper:
-    predql_converter: Converter
+    rtgl_converter: Converter
 
     def __init__(self, db: Database, timestamps=None):
 
         if timestamps is not None:
-            self.predql_converter = TConverter(db, timestamps)
+            self.rtgl_converter = TConverter(db, timestamps)
         else:
-            self.predql_converter = SConverter(db)
+            self.rtgl_converter = SConverter(db)
 
     def convert_query(self, query):
         print("========================================")
         print(query)
-        table = self.predql_converter.convert(query, execute=True)
+        table = self.rtgl_converter.convert(query, execute=True)
         print(table)
         print("========================================")
 

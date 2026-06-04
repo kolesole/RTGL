@@ -7,7 +7,7 @@ import pandas as pd
 import pytest
 
 
-@pytest.mark.parametrize("pql_aggr", [
+@pytest.mark.parametrize("rtgl_aggr", [
     ("AVG"),
     ("MAX"),
     ("MIN"),
@@ -18,18 +18,18 @@ import pytest
     ("LAST")
 ])
 def test_aggr_tmp(temporal_converter,
-                  pql_aggr):
-    pql_query = f"""
-        PREDICT {pql_aggr}(grades.grade, 0, 10, DAYS)
+                  rtgl_aggr):
+    rtgl_query = f"""
+        PREDICT {rtgl_aggr}(grades.grade, 0, 10, DAYS)
         FOR EACH students.studentId;
     """
-    res_table = temporal_converter.convert(pql_query, execute=True)
+    res_table = temporal_converter.convert(rtgl_query, execute=True)
     res_df = res_table.df
     res_fkey_col_to_pkey_table = res_table.fkey_col_to_pkey_table
     res_pkey_col = res_table.pkey_col
     res_time_col = res_table.time_col
 
-    match pql_aggr:
+    match rtgl_aggr:
         case "AVG":
             ref_data = """
                 fk, timestamp,  label
@@ -119,11 +119,11 @@ def test_aggr_tmp(temporal_converter,
 ])
 def test_list_distinct_tmp(temporal_converter,
                            list_distinct_op):
-    pql_query = f"""
+    rtgl_query = f"""
         PREDICT LIST_DISTINCT(grades.grade, 0, 10, DAYS) {list_distinct_op}
         FOR EACH students.studentId;
     """
-    res_table = temporal_converter.convert(pql_query, execute=True)
+    res_table = temporal_converter.convert(rtgl_query, execute=True)
     res_df = res_table.df
 
     def normalize_label(value):
