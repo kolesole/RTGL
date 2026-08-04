@@ -1,8 +1,10 @@
 """Static RTGL converter class for non-temporal queries."""
 
+import time
+
 from rtgl.base import Database, Table
 from rtgl.converter.converter import Converter
-from rtgl.converter.utils import get_div_line
+from rtgl.converter.utils import build_cte, format_query, get_div_lines
 from rtgl.validator import SValidator
 
 
@@ -45,16 +47,11 @@ class SConverter(Converter):
 
         # build FOR EACH query
         for_each_dict = query_dict["ForEach"].value
-        ptable, ppk, for_each_query = self.build_for_each(for_each_dict)
+        ptable, ppk = self.build_for_each(for_each_dict)
 
         # build PREDICT query using FOR EACH query as base
         predict_dict = query_dict["Predict"].value
-        sql_query = self.build_predict(predict_dict, ptable, ppk, for_each_query)
-
-        # build WHERE query if exists, using PREDICT query as base
-        if where := query_dict["Where"]:
-            where_dict = where.value
-            sql_query = self.build_where(where_dict, ptable, ppk, sql_query)
+        sql_query = self.build_predict(predict_dict, ptable, ppk)
 
         # fiter and add semicolon to end of SQL query
         label_fk = None
@@ -65,22 +62,46 @@ class SConverter(Converter):
             if aggr_dict["AggrType"].value.lower() == "list_distinct":
                 filt = f"{filt} AND label != [NULL]"
                 select_clause = "fk, list_filter(label, x -> x IS NOT NULL) AS label"
-                table, table_obj = self._find_table(aggr_dict["Table"].value)
+                table, table_obj, _ = self._find_table(aggr_dict["Table"].value)
                 column = self._find_column(table, aggr_dict["Column"].value)
 
                 label_fk = table if table_obj.pkey_col == column else table_obj.fkey_col_to_pkey_table.get(column)
 
-        sql_query = f"SELECT\n    {select_clause}\nFROM\n  ({sql_query}\n)\nWHERE {filt}\nORDER BY fk ASC\n;\n"
+        div_line1, div_line2 = get_div_lines("MAIN_QUERY")
+        
+        sql_query = (
+            f"{self.ctes}"
+            f"{div_line1}\n"
+            f"SELECT\n"    
+            f"    {select_clause}\n"
+            "FROM\n"  
+            f"    ({sql_query}\n)\n"
+            f"WHERE {filt}\n"
+            "ORDER BY fk ASC\n;\n"
+            f"{div_line2}"
+        )
 
         if not execute:
+            self._clear_metadata()
             return sql_query
 
         self._register_db()
 
-        ptable_orig, _ = self._find_table(ptable)
+        ptable_orig = self._find_orig_name(ptable)
+        if ptable_inf := self.cte_dict.get(ptable_orig.lower()):
+            ptable_obj, _ = ptable_inf
+            ptable_orig = ptable_obj.fkey_col_to_pkey_table.get(ppk)
+            ptable_orig = self._find_orig_name(ptable_orig)
+
+        self._clear_metadata()
 
         # execute SQL query and return result as Table
+        start_time = time.time()
         df = self.conn.sql(sql_query).df()
+        end_time = time.time()
+
+        print(f"SQL query executed in {end_time - start_time:.2f} seconds.")
+
         fkey_col_to_pkey_table = {"fk": ptable_orig} # fk column in output table corresponds to pk of parent table
         if label_fk:  # label column in output table corresponds to pk or fk of aggregation table
             fkey_col_to_pkey_table["label"] = label_fk # if aggregarion operation is LIST_DISTINCT
@@ -92,7 +113,7 @@ class SConverter(Converter):
             time_col=None,
         )
 
-    def build_for_each(self, for_each_dict: dict) -> tuple[str, str, str]:
+    def build_for_each(self, for_each_dict: dict) -> tuple[str, str]:
         r"""Builds a SQL query for the FOR EACH clause in static conversion.
 
         Args:
@@ -101,40 +122,77 @@ class SConverter(Converter):
         Returns:
             ptable (str): Name of the parent table.
             ppk (str): Name of the primary key column in the parent table.
-            for_each_query (str): SQL subquery returning the foreign keys of
-                    the parent table (optionally filtered).
         """
+        # create division markers for formatted output
+        div_line1, div_line2 = get_div_lines("FOR_EACH")
+
         # extract parent table and primary key column
-        ptable = ptable_name = for_each_dict["Table"].value
+        ptable = for_each_dict["Table"].value
         ppk = self._find_column(ptable, for_each_dict["Column"].value)
 
         # build static WHERE query if exists to filter parent table rows before prediction
+        where_query = (
+            "SELECT\n"
+            f"    *\n"
+            "FROM\n"
+            f"    {ptable}"
+        )
         if where := for_each_dict["Where"]:
-            ptable = self.build_stat_where(where.value, ptable, ppk)
-            ptable = ptable.replace("\n", "\n" + 4 * " ") + "\n"
-            ptable = f"({ptable})"
+            where_query = self.build_stat_where(where.value, ptable, ppk)
+            where_query = format_query(where_query)
 
         # create division markers for formatted output
-        div_line1 = get_div_line("FOR_EACH_START")
-        div_line2 = get_div_line("FOR_EACH_END")
+        div_line1, div_line2 = get_div_lines("FILTERED_PARENT_CTE")
 
-        # build final FOR EACH query
-        for_each_query = f"{div_line1}\nSELECT\n    {ppk} AS fk\nFROM\n    {ptable}\n{div_line2}"
+        parent_cte = build_cte(
+            name="__FILTERED_PARENT__",
+            body=(
+                f"{div_line1}\n"
+                "SELECT\n"
+                f"    *\n"
+                "FROM\n"
+                f"    {ptable}\n"
+                "WHERE\n"
+                f"    {ppk} IN (\n"
+                f"SELECT {ppk} FROM (\n"
+                f"{where_query}))\n"
+                f"{div_line2}\n"
+            )
+        )
+        self.ctes += (",\n" if self.ctes else "WITH ") + parent_cte
 
-        return ptable_name, ppk, for_each_query
+        # create division markers for formatted output
+        div_line1, div_line2 = get_div_lines("FOR_EACH_CTE")
 
-    def build_predict(self, query_dict: dict, ptable: str, ppk: str, for_each_query: str) -> str:
+        for_each_cte = build_cte(
+            name="__FOR_EACH__",
+            body= (
+                f"{div_line1}\n"
+                "SELECT\n"    
+                f"    {ppk} AS fk\n"
+                "FROM\n"    
+                f"    __FILTERED_PARENT__\n"
+                f"{div_line2}\n"
+            )
+        )
+        self.ctes += ",\n" + for_each_cte + "\n"
+
+        return ptable, ppk
+
+    def build_predict(self, query_dict: dict, ptable: str, ppk: str) -> str:
         r"""Builds a SQL query for the PREDICT clause in static conversion.
 
         Args:
             query_dict (dict): Parsed dictionary of the PREDICT clause.
             ptable (str): Name of the parent table.
             ppk (str): Name of the primary key column in the parent table.
-            for_each_query (str): SQL subquery from the FOR_EACH WHERE clause, providing base fk column.
 
         Returns:
             predict_query (str): SQL subquery returning (fk, label) pairs.
         """
+        # create division markers for formatted output
+        div_line1, div_line2 = get_div_lines("PREDICT")
+
         # check predict type, build main_query and label_query accordingly
         # expr / id_dot_id
         pred_type = query_dict["PredType"]
@@ -150,27 +208,22 @@ class SConverter(Converter):
         else:
             pass
 
-        main_query = main_query.replace("\n", "\n" + 4 * " ") + "\n"
-        label_query = label_query.replace("\n", "\n" + 4 * " ") + "\n"
-        for_each_query = for_each_query.replace("\n", "\n" + 4 * " ") + "\n"
-
-        # create division markers for formatted output
-        div_line_pred1 = get_div_line("PREDICT_START")
-        div_line_pred2 = get_div_line("PREDICT_END")
+        main_query = format_query(main_query)
+        label_query = format_query(label_query)
 
         # build final PREDICT query
         predict_query = (
-            f"{div_line_pred1}\n"
+            f"{div_line1}\n"
             "SELECT\n"
             "    __FOR_EACH__.fk AS fk,\n"
             f"    {label_query} AS label\n"
             "FROM\n"
-            f"    ({for_each_query}) __FOR_EACH__\n"
+            "    __FOR_EACH__\n"
             "LEFT JOIN\n"
             f"    ({main_query}) __MAIN__\n"
             "ON\n"
             "    __MAIN__.fk = __FOR_EACH__.fk\n"
-            f"{div_line_pred2}"
+            f"{div_line2}"
         )
 
         return predict_query
@@ -208,19 +261,21 @@ class SConverter(Converter):
         Returns:
             where_query (str): SQL query returning (fk, label) pairs filtered by the WHERE expression.
         """
-        expr_query = self.build_expr(where_dict["Expr"].value, ptable, ppk)
-        expr_query = expr_query.replace("\n", "\n" + 4 * " ") + "\n"
-
         # create division markers for formatted output
-        div_line1 = get_div_line("WHERE_START")
-        div_line2 = get_div_line("WHERE_END")
+        div_line1, div_line2 = get_div_lines("WHERE")
+
+        expr_dict = where_dict["Expr"].value
+        expr_query = self.build_expr(expr_dict, ptable, ppk)
+
+        expr_query = format_query(expr_query)
+        predict_query = format_query(predict_query)
 
         where_query = (
             f"{div_line1}\n"
             "SELECT\n"
-            "    *\n"
+            "    __PREDICT__.*\n"
             "FROM\n"
-            f"    ({predict_query}\n) __PREDICT__\n"
+            f"    ({predict_query}) __PREDICT__\n"
             "JOIN\n"
             f"    ({expr_query}\n) __EXPR__\n"
             "ON\n"
@@ -248,3 +303,54 @@ class SConverter(Converter):
         aggr_query = self.build_stat_aggregation(aggr_dict, ptable, ppk)
 
         return aggr_query
+
+    def build_ctes(self, injections: list[tuple[str, str, dict[str, str], str]]) -> None:
+        r"""Builds Common Table Expressions (CTEs) for the static RTGL query.
+
+        Args:
+            injections (list[tuple[str, str, dict[str, str], str]]): List of tuples containing 
+                (body, name, pkey_col, fkey_col_to_pkey_table, fkey_table_col) for each CTE to be built.
+        
+        Returns:
+            out (None):
+        """
+        for body, name, pkey_col, fkey_col_to_pkey_table, fkey_table_col in injections:
+            div_line1, div_line2 = get_div_lines(f"{name.upper()}_CTE")
+
+            cte = build_cte(
+                name=name,
+                body=(
+                    f"{div_line1}\n"
+                    f"{body}\n"
+                    f"{div_line2}\n"
+                )
+            )
+            self.ctes += cte + ",\n"
+    
+            self.cte_dict[name] = (self._normalize_table(Table(
+                df=None,
+                fkey_col_to_pkey_table=fkey_col_to_pkey_table,
+                pkey_col=pkey_col,
+                time_col=None,
+            )),
+            {table.lower(): col.lower() for table, col in fkey_table_col.items()})
+        
+        if self.ctes:
+            self.ctes = "WITH " + self.ctes[:-2]
+        
+    def build_join(self, src_table: str, src_table_query: str, dst_table: str, **kwargs: dict) -> str:
+        r"""Builds a SQL query for joining two tables in static conversion.
+
+        Just uses existing *build_stat_join* method from base *`Converter`* class.
+
+        Args:
+            src_table (str): Source table.
+            src_table_query (str): SQL query for the source table.
+            dst_table (str): Destination table.
+            kwargs (dict): Additional keyword arguments.
+
+        Returns:
+            join_query (str): SQL query with joined tables.
+        """
+        
+        return self.build_stat_join(src_table, src_table_query, dst_table)

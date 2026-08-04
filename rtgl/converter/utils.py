@@ -67,51 +67,97 @@ def build_null_condition(cond_dict: dict) -> Callable[[str], str]:
     return lambda column: f"{column} {check_op}"
 
 
-def build_aggr_func(aggr_dict: dict, time_column: str = None) -> Callable[[str], str]:
+def build_aggr_func(aggr_dict: dict, ptable: str, time_column: str = None) -> Callable[[str], str]:
     """Builds SQL aggregation function from parsed dictionary.
 
     Args:
         aggr_dict (dict): Dictionary containing 'AggrType' (aggregation type) and 'Column' (column to aggregate).
+        ptable(str): Name of the parent table.
         time_column (str, optional): Time column name for temporal aggregations.
 
     Returns:
         function: Lambda that takes a table name and returns SQL aggregation expression.
     """
     aggr_type = aggr_dict["AggrType"].value.lower()
-    column = aggr_dict["Column"].value
+    aggr_table = aggr_dict["Table"].value
+    
+    if aggr_table == ptable:
+        aggr_column = aggr_dict["Column"].value
+    else:
+        aggr_column = f"__TABLE0__" + aggr_dict["Column"].value
+        time_column = f"__TABLE0__" + time_column if time_column else None
 
     match aggr_type:
         case "avg":
-            return lambda table: f"AVG({table}.{column})"
+            return lambda table: f"AVG({table}.{aggr_column})"
         case "count":
-            return lambda table: f"COUNT({table}.{column})"
+            return lambda table: f"COUNT({table}.{aggr_column})"
         case "count_distinct":
-            return lambda table: f"COUNT(DISTINCT {table}.{column})"
+            return lambda table: f"COUNT(DISTINCT {table}.{aggr_column})"
         case "first":
-            return lambda table: f"ARRAY_AGG({table}.{column} ORDER BY {table}.{time_column} ASC)[1]"
+            return lambda table: f"ARRAY_AGG({table}.{aggr_column} ORDER BY {table}.{time_column} ASC)[1]"
         case "last":
-            return lambda table: f"ARRAY_AGG({table}.{column} ORDER BY {table}.{time_column} DESC)[1]"
+            return lambda table: f"ARRAY_AGG({table}.{aggr_column} ORDER BY {table}.{time_column} DESC)[1]"
         case "list_distinct":
-            return lambda table: f"ARRAY_AGG(DISTINCT {table}.{column})"
+            return lambda table: f"ARRAY_AGG(DISTINCT {table}.{aggr_column})"
         case "max":
-            return lambda table: f"MAX({table}.{column})"
+            return lambda table: f"MAX({table}.{aggr_column})"
         case "min":
-            return lambda table: f"MIN({table}.{column})"
+            return lambda table: f"MIN({table}.{aggr_column})"
         case "sum":
-            return lambda table: f"SUM({table}.{column})"
+            return lambda table: f"SUM({table}.{aggr_column})"
         case _:
             pass
 
 
-def get_div_line(message: str) -> str:
-    """Generates a division line with message for SQL formatting.
+def build_cte(name: str, body: str) -> str:
+    """Builds a Common Table Expression (CTE) SQL string.
 
-    Creates a SQL comment line with a message.
+    Args:
+        name (str): Name of the CTE.
+        body (str): SQL query body of the CTE.
+    
+    Returns:
+        out (str): Formatted CTE SQL string.
+    """
+    return f"{name} AS (\n{body})"
+
+    
+def add_prefix(table_query: str, prefix: str) -> str:
+    """Adds a prefix to all column names in a table.
+
+    Args:
+        table_query (str): SQL query representing the table.
+        prefix (str): Prefix to add to each column name.
+    
+    Returns:
+        out (str): SQL query with prefixed column names.
+    """
+    return f"(SELECT COLUMNS(*) AS '{prefix}\\0' FROM {table_query})"
+
+
+def format_query(query: str) -> str:
+    """Formats a SQL query string for better readability.
+
+    Args:
+        query (str): SQL query string to format.
+    
+    Returns:
+        out (str): Formatted SQL query string with indentation.
+    """
+    return query.replace("\n", "\n" + 4 * " ") + "\n"
+
+
+def get_div_lines(message: str) -> tuple[str, str]:
+    """Generates division lines with a messages for SQL formatting.
+
+    Creates SQL comment lines with a message.
 
     Args:
         message (str): Message to include in the division line.
 
     Returns:
-        out (None):
+        out (tuple[str, str]): Tuple containing the starting and ending division lines.
     """
-    return f"{'--' * 3}{message}{'--' * 3}"
+    return f"{'--' * 3}{message}_START{'--' * 3}", f"{'--' * 3}{message}_END{'--' * 3}" 
+
