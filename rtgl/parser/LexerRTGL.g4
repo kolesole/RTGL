@@ -157,11 +157,29 @@ OPEN_PAREN
 CLOSE_PAREN 
     : ')' 
     ;
+OPEN_BRACKET
+    : '['
+    ;
+CLOSE_BRACKET
+    : ']'
+    ;
+OPEN_BRACE
+    : '{'
+    ;
+CLOSE_BRACE
+    : '}'
+    ;
 STAR
     : '*'
     ;
 SEMICOLON
     : ';'
+    ;
+ARROW
+    : '->'
+    ;
+COLON
+    : ':'
     ;
 
 // ============================================================================
@@ -224,14 +242,19 @@ STRING
 // Identifiers (variable names, table names, column names)
 ID        
     : [a-zA-Z_] [a-zA-Z_0-9]*
-    ; 
+    ;
+
+// Body of SQL injection, allowing nested brackets
+SQL_INJECTION_BODY
+    : OPEN_BRACKET (~']' | SQL_INJECTION_BODY)* CLOSE_BRACKET
+    ;
 
 // ============================================================================
 // WHITESPACE AND CATCH-ALL
 // ============================================================================
 
 WS_SKIP        
-    : WS+ -> skip 
+    : WS+ -> channel(HIDDEN)
     ;
 
 // Catch-all for any unrecognized character

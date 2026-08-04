@@ -16,23 +16,27 @@ query
     ;
 
 query_tmp
-    : predict_tmp for_each (assuming)? (where_tmp)? SEMICOLON
+    : predict_tmp for_each_tmp (where_tmp)? (assuming)? SEMICOLON
     ;
 
 query_stat
-    : predict_stat for_each (where_stat)? SEMICOLON
+    : predict_stat for_each_stat (where_stat)? SEMICOLON
     ;
 
 // ============================================================================
 // QUERY CLAUSES
 // ============================================================================
 
-// FOR_EACH clause: specifies the table and attribute to iterate over
-for_each
-    : FOR_EACH ID DOT (ID | STAR) (where_stat)?
+// FOR_EACH clause: specifies the table/sql injection and column to iterate over
+for_each_tmp
+    : FOR_EACH (ID | sql_injection_tmp) DOT (ID | STAR) (where_stat)?
     ;
 
-// PREDICT clause: specifies what to predict (aggregation, expression, or column)
+for_each_stat
+    : FOR_EACH (ID | sql_injection_stat) DOT (ID | STAR) (where_stat)?
+    ;
+
+// PREDICT clause: specifies what to predict (aggregation, expression, or table/sql injection with column)
 predict_tmp
     : PREDICT aggregation_tmp (RANK_TOP INT | CLASSIFY)?  
     | PREDICT expr_or_tmp  
@@ -41,7 +45,7 @@ predict_tmp
 predict_stat
     : PREDICT aggregation_stat (RANK_TOP INT | CLASSIFY)?  
     | PREDICT expr_or_stat  
-    | PREDICT ID DOT (ID | STAR)
+    | PREDICT (ID | sql_injection_stat) DOT (ID | STAR)
     ;
 
 // ASSUMING clause: specifies conditions that should be assumed to hold
@@ -95,13 +99,13 @@ expr_term_stat
 // CONDITIONS
 // ============================================================================
 
-// A condition consists of a subject (aggregation or column reference) and a comparison
+// A condition consists of a subject (aggregation or table/sql ibjection with column reference) and a comparison
 condition_tmp
     : (NOT)? aggregation_tmp (num_condition | str_condition | null_check_condition)
     ;
 
 condition_stat
-    : (NOT)? (aggregation_stat | ID DOT (ID | STAR))  
+    : (NOT)? (aggregation_stat | (ID | sql_injection_stat) DOT (ID | STAR))  
       (num_condition | str_condition | null_check_condition)
     ;
 
@@ -124,11 +128,42 @@ null_check_condition
 // AGGREGATION FUNCTIONS
 // ============================================================================
 
-// Aggregation format
+// Aggregation: specifies an aggregation function applied to a table/sql injection column, optionally with a  static WHERE clause and time inteval for temporal queries
 aggregation_tmp
-    : AGGR_FUNC OPEN_PAREN ID DOT (ID | STAR) (where_stat)? COMMA INT COMMA INT COMMA TIME_MEASURE_UNIT CLOSE_PAREN
+    : AGGR_FUNC OPEN_PAREN (ID | sql_injection_tmp) DOT (ID | STAR) (where_stat)? COMMA INT COMMA INT COMMA TIME_MEASURE_UNIT CLOSE_PAREN
     ;
 
 aggregation_stat
-    : AGGR_FUNC OPEN_PAREN ID DOT (ID | STAR) (where_stat)? CLOSE_PAREN
+    : AGGR_FUNC OPEN_PAREN (ID | sql_injection_stat) DOT (ID | STAR) (where_stat)? CLOSE_PAREN
+    ;
+
+// ============================================================================
+// SQL INJECTIONS
+// ============================================================================
+
+// SQL injection: allows specifying a SQL query with parameters.
+sql_injection_tmp
+    : SQL_INJECTION_BODY
+      OPEN_BRACE ID CLOSE_BRACE // name
+      OPEN_BRACE (ID)? CLOSE_BRACE // pkey_col
+      OPEN_BRACE ((fk_col_to_pk_table COMMA)* fk_col_to_pk_table)? CLOSE_BRACE  // fkey_col_to_pkey_table list
+      OPEN_BRACE ((fk_table_col COMMA)* fk_table_col)? CLOSE_BRACE // fkey_table_col list
+      OPEN_BRACE ID CLOSE_BRACE // time_col 
+    ;
+
+sql_injection_stat
+    : SQL_INJECTION_BODY
+      OPEN_BRACE ID CLOSE_BRACE // name
+      OPEN_BRACE (ID)? CLOSE_BRACE // pkey_col
+      OPEN_BRACE ((fk_col_to_pk_table COMMA)* fk_col_to_pk_table)? CLOSE_BRACE  // fkey_col_to_pkey_table list
+      OPEN_BRACE ((fk_table_col COMMA)* fk_table_col)? CLOSE_BRACE // fkey_table_col list
+    ;
+
+// Parameters for SQL injection.
+fk_col_to_pk_table
+    : ID ARROW ID
+    ;
+    
+fk_table_col
+    : ID COLON ID
     ;

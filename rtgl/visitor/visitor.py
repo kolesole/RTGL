@@ -20,8 +20,12 @@ class Visitor(ParserRTGLVisitor):
     their line and column positions in the source query.
     """
 
+    def __init__(self):
+        super().__init__()
+        self.injections = []  # store SQL injections for later use
+
     @override
-    def visitQuery(self, ctx: ParserRTGL.QueryContext) -> dict:
+    def visitQuery(self, ctx: ParserRTGL.QueryContext) -> tuple[dict, dict]:
         r"""Visits the top-level query rule.
 
         Extracts both temporal and static query components (only one will be non-None).
@@ -36,7 +40,10 @@ class Visitor(ParserRTGLVisitor):
         query_stat = self._rule2value(ctx.query_stat())
 
         query_dict = {"QueryTmp": query_tmp, "QueryStat": query_stat}
-        return query_dict
+
+        injections = self.injections
+        self.injections = []  # reset injections for next query
+        return query_dict, injections
 
     @override
     def visitQuery_tmp(self, ctx: ParserRTGL.Query_tmpContext) -> dict:
@@ -49,11 +56,11 @@ class Visitor(ParserRTGLVisitor):
             query_dict (dict): Dictionary with temporal query components.
         """
         predict = self._rule2value(ctx.predict_tmp())
-        for_each = self._rule2value(ctx.for_each())
-        assuming = self._rule2value(ctx.assuming())
+        for_each = self._rule2value(ctx.for_each_tmp())
         where = self._rule2value(ctx.where_tmp())
+        assuming = self._rule2value(ctx.assuming())
 
-        query_dict = {"Predict": predict, "ForEach": for_each, "Assuming": assuming, "Where": where}
+        query_dict = {"Predict": predict, "ForEach": for_each, "Where": where, "Assuming": assuming}
         return query_dict
 
     @override
@@ -67,24 +74,41 @@ class Visitor(ParserRTGLVisitor):
             query_dict (dict): Dictionary with static query components.
         """
         predict = self._rule2value(ctx.predict_stat())
-        for_each = self._rule2value(ctx.for_each())
+        for_each = self._rule2value(ctx.for_each_stat())
         where = self._rule2value(ctx.where_stat())
 
         query_dict = {"Predict": predict, "ForEach": for_each, "Where": where}
         return query_dict
 
     @override
-    def visitFor_each(self, ctx: ParserRTGL.For_eachContext) -> dict:
-        r"""Visits FOR EACH clause.
+    def visitFor_each_tmp(self, ctx: ParserRTGL.For_each_tmpContext) -> dict:
+        r"""Visits temporal FOR EACH clause.
 
         Args:
-            ctx (ParserRTGL.For_eachContext): Parse tree context.
+            ctx (ParserRTGL.For_each_tmpContext): Parse tree context.
 
         Returns:
             for_each_dict (dict): Dictionary with FOR EACH components.
         """
-        table = self._node2value(ctx.ID(0))
-        column = self._node2value(ctx.STAR() if ctx.STAR() else ctx.ID(1))
+        table = self.visit(ctx.sql_injection_tmp()) if ctx.sql_injection_tmp() else self._node2value(ctx.ID(0))
+        column = self._node2value(ctx.STAR() if ctx.STAR() else ctx.ID(len(ctx.ID()) - 1))
+        where = self._rule2value(ctx.where_stat())
+
+        for_each_dict = {"Table": table, "Column": column, "Where": where}
+        return for_each_dict
+    
+    @override
+    def visitFor_each_stat(self, ctx: ParserRTGL.For_each_statContext) -> dict:
+        r"""Visits static FOR EACH clause.
+
+        Args:
+            ctx (ParserRTGL.For_each_statContext): Parse tree context.
+
+        Returns:
+            for_each_dict (dict): Dictionary with FOR EACH components.
+        """
+        table = self.visit(ctx.sql_injection_stat()) if ctx.sql_injection_stat() else self._node2value(ctx.ID(0))
+        column = self._node2value(ctx.STAR() if ctx.STAR() else ctx.ID(len(ctx.ID()) - 1))
         where = self._rule2value(ctx.where_stat())
 
         for_each_dict = {"Table": table, "Column": column, "Where": where}
@@ -104,7 +128,7 @@ class Visitor(ParserRTGLVisitor):
             pred_type = "aggregation"
         elif ctx.expr_or_tmp():
             pred_type = "expr"
-
+    
         aggregation = self._rule2value(ctx.aggregation_tmp())
         expr = self._rule2value(ctx.expr_or_tmp())
 
@@ -141,8 +165,8 @@ class Visitor(ParserRTGLVisitor):
 
         aggregation = self._rule2value(ctx.aggregation_stat())
         expr = self._rule2value(ctx.expr_or_stat())
-        table = self._node2value(ctx.ID(0))
-        column = self._node2value(ctx.STAR() if ctx.STAR() else ctx.ID(1))
+        table = self.visit(ctx.sql_injection_stat()) if ctx.sql_injection_stat() else self._node2value(ctx.ID(0))
+        column = self._node2value(ctx.STAR() if ctx.STAR() else ctx.ID(len(ctx.ID()) - 1))
 
         rank_top = self._node2value(ctx.RANK_TOP())
         k = self._node2value(ctx.INT())
@@ -383,8 +407,8 @@ class Visitor(ParserRTGLVisitor):
         cond_dict["CondType"] = cond_type
         cond_dict["NOT"] = self._node2value(ctx.NOT())
         cond_dict["Aggregation"] = self._rule2value(ctx.aggregation_stat())
-        cond_dict["Table"] = self._node2value(ctx.ID(0))
-        cond_dict["Column"] = self._node2value(ctx.STAR() if ctx.STAR() else ctx.ID(1))
+        cond_dict["Table"] = self.visit(ctx.sql_injection_stat()) if ctx.sql_injection_stat() else self._node2value(ctx.ID(0))
+        cond_dict["Column"] = self._node2value(ctx.STAR() if ctx.STAR() else ctx.ID(len(ctx.ID()) - 1))
         return cond_dict
 
     @override
@@ -454,8 +478,8 @@ class Visitor(ParserRTGLVisitor):
             aggr_dict (dict): Dictionary with temporal aggregation components.
         """
         aggr_type = self._node2value(ctx.AGGR_FUNC())
-        table = self._node2value(ctx.ID(0))
-        column = self._node2value(ctx.STAR() if ctx.STAR() else ctx.ID(1))
+        table = self.visit(ctx.sql_injection_tmp()) if ctx.sql_injection_tmp() else self._node2value(ctx.ID(0))
+        column = self._node2value(ctx.STAR() if ctx.STAR() else ctx.ID(len(ctx.ID()) - 1))
         where = self._rule2value(ctx.where_stat())
         start = self._node2value(ctx.INT(0))
         end = self._node2value(ctx.INT(1))
@@ -483,8 +507,8 @@ class Visitor(ParserRTGLVisitor):
             aggr_dict (dict): Dictionary with static aggregation components.
         """
         aggr_type = self._node2value(ctx.AGGR_FUNC())
-        table = self._node2value(ctx.ID(0))
-        column = self._node2value(ctx.STAR() if ctx.STAR() else ctx.ID(1))
+        table = self.visit(ctx.sql_injection_stat()) if ctx.sql_injection_stat() else self._node2value(ctx.ID(0))
+        column = self._node2value(ctx.STAR() if ctx.STAR() else ctx.ID(len(ctx.ID()) - 1))
         where = self._rule2value(ctx.where_stat())
 
         aggr_dict = {
@@ -494,6 +518,103 @@ class Visitor(ParserRTGLVisitor):
             "Where": where,
         }
         return aggr_dict
+
+    @override
+    def visitSql_injection_tmp(self, ctx: ParserRTGL.Sql_injection_tmpContext) -> ParsedValue:
+        r"""Visits a temporal SQL injection.
+        
+        Creates a ParsedValue for the SQL injection and stores its components.
+
+        Args:
+            ctx (ParserRTGL.Sql_injection_tmpContext): Parse tree context.
+        
+        Returns:
+            name (str): Name of the SQL injection.
+        """
+        body = ctx.SQL_INJECTION_BODY().getSymbol().text[1:-1]
+        name = self._node2value(ctx.ID(0))
+
+        len_id = len(ctx.ID())
+        pkey_col = self._node2value(ctx.ID(1)).value if len_id == 3 else None
+        time_col = self._node2value(ctx.ID(len_id - 1)).value  
+
+        fkey_col_to_pkey_table = {}
+        for fk_ctx in ctx.fk_col_to_pk_table():
+            fk, table = self.visitFk_col_to_pk_table(fk_ctx)
+            fkey_col_to_pkey_table[fk] = table
+        
+        fkey_table_col = {}
+        for fk_ctx in ctx.fk_table_col():
+            table, fk = self.visitFk_table_col(fk_ctx)
+            fkey_table_col[table] = fk
+
+        self.injections.append(
+            (body, name.value, pkey_col, fkey_col_to_pkey_table, fkey_table_col, time_col)
+        )
+
+        return name
+
+    @override
+    def visitSql_injection_stat(self, ctx: ParserRTGL.Sql_injection_statContext) -> ParsedValue:
+        r"""Visits a static SQL injection.
+        
+        Creates a ParsedValue for the SQL injection and stores its components.
+        
+        Args:
+            ctx (ParserRTGL.Sql_injection_statContext): Parse tree context.
+        
+        Returns:
+            name (str): Name of the SQL injection.
+        """
+        body = ctx.SQL_INJECTION_BODY().getSymbol().text[1:-1]
+        name = self._node2value(ctx.ID(0))
+        pkey_col = self._node2value(ctx.ID(1)).value if len(ctx.ID()) == 2 else None
+        
+        fkey_col_to_pkey_table = {}
+        for fk_ctx in ctx.fk_col_to_pk_table():
+            fk, table = self.visitFk_col_to_pk_table(fk_ctx)
+            fkey_col_to_pkey_table[fk] = table
+        
+        fkey_table_col = {}
+        for fk_ctx in ctx.fk_table_col():
+            table, fk = self.visitFk_table_col(fk_ctx)
+            fkey_table_col[table] = fk
+
+        self.injections.append(
+            (body, name.value, pkey_col, fkey_col_to_pkey_table, fkey_table_col)
+        )
+
+        return name
+    
+    @override
+    def visitFk_col_to_pk_table(self, ctx:ParserRTGL.Fk_col_to_pk_tableContext):
+        r"""Visits a foreign key to primary key table mapping.
+
+        Args:
+            ctx (ParserRTGL.Fk_col_to_pk_tableContext): Parse tree context.
+        
+        Returns:
+            fk (str): Foreign key column name.
+            pk_table (str): Primary key table name.
+        """
+        fk = self._node2value(ctx.ID(0)).value
+        pk_table = self._node2value(ctx.ID(1)).value
+        return fk, pk_table
+
+    @override
+    def visitFk_table_col(self, ctx:ParserRTGL.Fk_table_colContext):
+        r"""Visits a foreign key table to column mapping.
+
+        Args:
+            ctx (ParserRTGL.Fk_table_colContext): Parse tree context.
+        
+        Returns:
+            fk_table (str): Foreign key table name.
+            fk (str): Foreign key column name.
+        """
+        fk_table = self._node2value(ctx.ID(0)).value
+        fk = self._node2value(ctx.ID(1)).value
+        return fk_table, fk
 
     ################## Helper methods ##################
 
@@ -512,7 +633,7 @@ class Visitor(ParserRTGLVisitor):
             return None
 
         token = node.getSymbol()
-        return ParsedValue(value=token.text, line=token.line, column=token.column)
+        return ParsedValue(value=token.text.lower(), line=token.line, column=token.column)
 
     def _rule2value(self, ctx: ParserRuleContext | None) -> ParsedValue | None:
         r"""Converts a rule context to *`ParsedValue`*.
