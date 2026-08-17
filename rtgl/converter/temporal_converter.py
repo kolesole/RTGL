@@ -39,7 +39,7 @@ class TConverter(Converter):
 
         self.timestamps = timestamps
         # initialize temporal validator
-        self.validator = TValidator(self.collector, self.db)
+        self.validator = TValidator(self.collector, self.norm_db)
 
     def convert(self, rtgl_query: str, execute: bool = False) -> str | Table:
         r"""Converts the temporal RTGL query string into an executable SQL query.
@@ -93,9 +93,8 @@ class TConverter(Converter):
             if aggr_dict["AggrType"].value.lower() == "list_distinct":
                 filt = f"{filt} AND label != [NULL]"
                 select_clause = "fk, timestamp, list_filter(label, x -> x IS NOT NULL) AS label"
-                table, table_obj, _ = self._find_table(aggr_dict["Table"].value)
+                table, table_obj, _ = self._find_table(self.path_builder.find_orig_src_table(aggr_dict["Table"].value))
                 column = self._find_column(table, aggr_dict["Column"].value)
-
                 label_fk = table if table_obj.pkey_col == column else table_obj.fkey_col_to_pkey_table.get(column)
 
         div_line1, div_line2 = get_div_lines("MAIN_QUERY")
@@ -423,18 +422,27 @@ class TConverter(Converter):
         div_line1, div_line2 = get_div_lines("AGGREGATION")
         
         # extract aggregation parameters
-        aggr_table = aggr_table_name = aggr_dict["Table"].value
-        aggr_column = self._find_column(aggr_table, aggr_dict["Column"].value)
         start = float(aggr_dict["Start"].value)
         end = float(aggr_dict["End"].value)
         measure_unit = aggr_dict["MeasureUnit"].value.upper()
 
+        aggr_table = aggr_table_name = self.path_builder.find_orig_src_table(aggr_dict["Table"].value)
+        aggr_column = self._find_column(aggr_table, aggr_dict["Column"].value)
+        
         # find time column for temporal filtering
         time_column = self._find_time_column(aggr_table)
+
+        if aggr_table != ptable:
+            aggr_dict["Column"].value = f"__TABLE0__" + aggr_column
+            time_column = f"__TABLE0__" + time_column if time_column else None
+            
+        if aggr_column == "*":
+            aggr_dict["Column"].value = ppk
+            
         # build SQL aggregation function with proper column references
-        aggr_dict["Column"].value = aggr_column
-        aggr_func = build_aggr_func(aggr_dict, ptable, time_column)
+        aggr_func = build_aggr_func(aggr_dict, time_column)
         aggr = format_query(aggr_func("__JOINED_TABLES__"))
+        aggr_dict["Column"].value = aggr_column
 
         # build static WHERE query if exists to filter aggregation table rows before temporal aggregation
         if where := aggr_dict["Where"]:
@@ -443,7 +451,7 @@ class TConverter(Converter):
             aggr_table = format_query(aggr_table)
             aggr_table = f"({aggr_table}\n)"
 
-        joined_tables = self.build_join(aggr_table_name, aggr_table, ptable, (start, end, measure_unit))
+        joined_tables = self.build_join(aggr_dict["Table"].value, aggr_table, ptable, (start, end, measure_unit))
 
         # if aggregation column is a foreign key to another table with a time column ->
         # -> perform temporal join with that table to filter aggregation rows
@@ -538,35 +546,40 @@ class TConverter(Converter):
         div_line1, div_line2 = get_div_lines("TABLES_JOIN")
 
         start, end, measure_unit = time_interval
-        src_time_col = self._find_time_column(src_table)
+        # src_time_col = self._find_time_column(src_table)
+
+        src_table, path = self.path_builder.find_shortest_path(src_table, dst_table)
 
         prefix = ""
-        if src_table != dst_table:
+        cur_table = src_table_query
+        if path:
             prefix = "__TABLE0__"
             cur_table = add_prefix(src_table_query, prefix)
 
         src_start_query = src_end_query = ""
-        if start != float("-inf"):
-            src_start_query = (    
-                f"    __TABLE0__.{prefix}{src_time_col} > __TIME__.timestamp + INTERVAL '{start} {measure_unit}'\n"
-            )
-        
-        if end != float("inf"):
-            src_end_query = (
-                f"{'AND' if src_start_query else ''}\n"
-                f"    __TABLE0__.{prefix}{src_time_col} <= __TIME__.timestamp + INTERVAL '{end} {measure_unit}'\n"
-            )
-
-        path = self.path_builder.build_path(src_table, dst_table)
+        join = "CROSS JOIN"
+        if src_time_col := self._find_time_column(src_table):
+            if start != float("-inf"):
+                src_start_query = (
+                    "ON\n"    
+                    f"    __TABLE0__.{prefix}{src_time_col} > __TIME__.timestamp + INTERVAL '{start} {measure_unit}'\n"
+                )
+            
+            if end != float("inf"):
+                src_end_query = (
+                    f"{'AND' if src_start_query else 'ON'}\n"
+                    f"    __TABLE0__.{prefix}{src_time_col} <= __TIME__.timestamp + INTERVAL '{end} {measure_unit}'\n"
+                )
+            
+            join = "JOIN"
 
         cur_table = (
             f"SELECT\n" 
             "    *\n" 
             "FROM\n" 
             f"    {cur_table} __TABLE0__\n" 
-            "JOIN\n"
+            f"{join}\n"
             "    __TIMESTAMPS__ __TIME__\n"
-            "ON\n"
             f"{src_start_query}"
             f"{src_end_query}"
         )
@@ -586,16 +599,27 @@ class TConverter(Converter):
                 right_col = fk
 
             join = "JOIN"
-            time_query = ""
+            start_query = end_query = ""
             if i != len(path) - 1:
                 right_table = add_prefix(right_table, f"__TABLE{i+1}__")
                 right_col = f"__TABLE{i+1}__{right_col}"
-                join = "JOIN"
+
                 if time_col := self._find_time_column(table):
-                    time_query = (
-                        "AND\n"    
-                        f"    __TABLE{i+1}__.__TABLE{i+1}__{time_col} <= __TIME__.timestamp + INTERVAL '{end} {measure_unit}'\n"
-                    )
+                    # time_query = (
+                    #     "AND\n"    
+                    #     f"    __TABLE{i+1}__.__TABLE{i+1}__{time_col} <= __TIME__.timestamp + INTERVAL '{end} {measure_unit}'\n"
+                    # )
+                    if start != float("-inf"):
+                        start_query = (
+                            "AND\n"
+                            f"    __TABLE{i+1}__.__TABLE{i+1}__{time_col} > __TIME__.timestamp + INTERVAL '{start} {measure_unit}'\n"
+                        )
+
+                    if end != float("inf"):
+                        end_query = (
+                            "AND\n"
+                            f"    __TABLE{i+1}__.__TABLE{i+1}__{time_col} <= __TIME__.timestamp + INTERVAL '{end} {measure_unit}'\n"
+                        )
 
             prev_table = table
 
@@ -605,7 +629,8 @@ class TConverter(Converter):
                 f"    {right_table} __TABLE{i+1}__\n"
                 "ON\n"
                 f"    __TABLE{i}__.{left_col} = __TABLE{i+1}__.{right_col}\n"
-                f"{time_query}"
+                f"{start_query}"
+                f"{end_query}"
             )
 
         join_query = (

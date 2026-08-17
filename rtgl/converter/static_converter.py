@@ -27,7 +27,7 @@ class SConverter(Converter):
         """
         super().__init__(db)
         # initialize static validator
-        self.validator = SValidator(self.collector, self.db)
+        self.validator = SValidator(self.collector, self.norm_db)
 
     def convert(self, rtgl_query: str, execute: bool = False) -> str | Table:
         r"""Converts the static RTGL query string into an executable SQL query.
@@ -62,7 +62,7 @@ class SConverter(Converter):
             if aggr_dict["AggrType"].value.lower() == "list_distinct":
                 filt = f"{filt} AND label != [NULL]"
                 select_clause = "fk, list_filter(label, x -> x IS NOT NULL) AS label"
-                table, table_obj, _ = self._find_table(aggr_dict["Table"].value)
+                table, table_obj, _ = self._find_table(self.path_builder.find_orig_src_table(aggr_dict["Table"].value))
                 column = self._find_column(table, aggr_dict["Column"].value)
 
                 label_fk = table if table_obj.pkey_col == column else table_obj.fkey_col_to_pkey_table.get(column)

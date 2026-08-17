@@ -67,33 +67,26 @@ def build_null_condition(cond_dict: dict) -> Callable[[str], str]:
     return lambda column: f"{column} {check_op}"
 
 
-def build_aggr_func(aggr_dict: dict, ptable: str, time_column: str = None) -> Callable[[str], str]:
+def build_aggr_func(aggr_dict: dict, time_column: str = None) -> Callable[[str], str]:
     """Builds SQL aggregation function from parsed dictionary.
 
     Args:
         aggr_dict (dict): Dictionary containing 'AggrType' (aggregation type) and 'Column' (column to aggregate).
-        ptable(str): Name of the parent table.
         time_column (str, optional): Time column name for temporal aggregations.
 
     Returns:
         function: Lambda that takes a table name and returns SQL aggregation expression.
     """
-    aggr_type = aggr_dict["AggrType"].value.lower()
-    aggr_table = aggr_dict["Table"].value
-    
-    if aggr_table == ptable:
-        aggr_column = aggr_dict["Column"].value
-    else:
-        aggr_column = f"__TABLE0__" + aggr_dict["Column"].value
-        time_column = f"__TABLE0__" + time_column if time_column else None
+    aggr_type = aggr_dict["AggrType"].value.lower()    
+    aggr_column = aggr_dict["Column"].value
 
     match aggr_type:
         case "avg":
             return lambda table: f"AVG({table}.{aggr_column})"
         case "count":
-            return lambda table: f"COUNT({table}.{aggr_column})"
+            return lambda table: f"COALESCE(COUNT({table}.{aggr_column}), 0)"
         case "count_distinct":
-            return lambda table: f"COUNT(DISTINCT {table}.{aggr_column})"
+            return lambda table: f"COALESCE(COUNT(DISTINCT {table}.{aggr_column}), 0)"
         case "first":
             return lambda table: f"ARRAY_AGG({table}.{aggr_column} ORDER BY {table}.{time_column} ASC)[1]"
         case "last":
@@ -105,7 +98,9 @@ def build_aggr_func(aggr_dict: dict, ptable: str, time_column: str = None) -> Ca
         case "min":
             return lambda table: f"MIN({table}.{aggr_column})"
         case "sum":
-            return lambda table: f"SUM({table}.{aggr_column})"
+            return lambda table: f"COALESCE(SUM({table}.{aggr_column}), 0)"
+        # case "length":
+        #     return lambda table: f"LENGTH({table}.{aggr_column})"
         case _:
             pass
 

@@ -18,7 +18,7 @@ from rtgl.converter.utils import (
 )
 from rtgl.parser import LexerRTGL, ParserRTGL
 from rtgl.converter.path_builder import PathBuilder
-from rtgl.validator import ErrorCollector, Validator
+from rtgl.validator import IssueCollector, Validator
 from rtgl.visitor import Visitor
 
 
@@ -48,7 +48,7 @@ class Converter(ABC):
 
         self.visitor = Visitor()
         self.validator = None
-        self.collector = ErrorCollector()
+        self.collector = IssueCollector()
         self.ctes = ""
         self.cte_dict = {}
         self.path_builder = None
@@ -139,17 +139,18 @@ class Converter(ABC):
         parser.addErrorListener(self.collector)
         tree = parser.query()
 
-        query_dict, injections = self.visitor.visit(tree)
+        # syntax errors collected during parsing
+        self.collector.report(after_syntax_validation=True)
+
+        query_dict, injections, predict_path = self.visitor.visit(tree)
         self.build_ctes(injections)
-        self.path_builder = PathBuilder(self.norm_db, self.cte_dict)
+        self.path_builder = PathBuilder(self.norm_db, self.cte_dict, predict_path)
 
-        # if self.validator:
-        #     self.validator.validate(query_dict)
+        if self.validator:
+            self.validator.validate(query_dict, self.cte_dict, self.path_builder)
 
-        if len(self.collector) > 0:
-            print(self.collector, file=sys.stderr)
-            self._clear_metadata()
-            sys.exit(1)
+        # semantic warnings and errors collected during validation
+        self.collector.report(after_syntax_validation=False)
 
         return query_dict
 
@@ -169,25 +170,95 @@ class Converter(ABC):
         # create division markers for formatted output
         div_line1, div_line2 = get_div_lines("STAT_WHERE")
 
-        expr_query = self.build_stat_expr(where_dict["Expr"].value, ptable, ppk)
-        expr_query = format_query(expr_query)
+        if where_dict["IsSimple"] and self.path_builder.find_orig_src_table(where_dict["Table"]) == ptable:
+            expr_query = self.build_simple_expr(where_dict["Expr"].value)
+            where_query = (
+                f"{div_line1}\n"
+                "SELECT\n"
+                "    *\n"                          
+                "FROM\n"
+                f"    {ptable}\n"
+                "WHERE\n"
+                f"{expr_query}"
+                f"{div_line2}"
+            )
+        else:
+            expr_query = self.build_stat_expr(where_dict["Expr"].value, ptable, ppk)
+            expr_query = format_query(expr_query)
 
-        where_query = (
-            f"{div_line1}\n"
-            "SELECT\n"
-            "    *\n"                          
-            "FROM\n"
-            f"    {ptable}\n"
-            "WHERE\n"
-            f"    {ppk} IN (\n"
-            "        SELECT fk FROM (\n"
-            f"            {expr_query}\n"
-            "        ) __IN_SUBQUERY__\n"
-            "    )\n"
-            f"{div_line2}"
-        )
+            where_query = (
+                f"{div_line1}\n"
+                "SELECT\n"
+                "    *\n"                          
+                "FROM\n"
+                f"    {ptable}\n"
+                "WHERE\n"
+                f"    {ppk} IN (\n"
+                "        SELECT fk FROM (\n"
+                f"            {expr_query}\n"
+                "        ) __IN_SUBQUERY__\n"
+                "    )\n"
+                f"{div_line2}"
+            )
 
         return where_query
+
+    def build_simple_expr(self, expr_dict: dict) -> str:
+        if isinstance(expr_dict, dict) and "Op" in expr_dict:
+            # build left expession
+            left_expr = self.build_simple_expr(expr_dict["LeftExpr"])
+            # build right expression
+            right_expr = self.build_simple_expr(expr_dict["RightExpr"])
+        
+            # check operation and convert to SQL format for tables
+            op = expr_dict["Op"].value.upper()
+        
+            expr_query = (
+                f"    ({left_expr})\n"
+                f"{op}\n"
+                f"    ({right_expr})\n"
+            )
+        else:
+            expr_query = self.build_simple_condition(expr_dict.value)
+        
+        return expr_query
+
+    def build_simple_condition(self, cond_dict: dict) -> str:
+        # check condition type and build main query for condition accordingly
+        # aggregation / id_dot_id
+        cond_type = cond_dict["CondType"]
+        match cond_type:
+            case "aggregation":
+                pass
+            case "id_dot_id":
+                pass
+            case _:
+                pass
+
+        # column to compare in condition
+        comp_col = cond_dict["Column"].value
+
+        # check value condition type and build condition accordingly
+        # num / str / null
+        ctype = cond_dict["CType"]
+        match ctype:
+            case "num":
+                cond = build_num_condition(cond_dict)
+            case "str":
+                cond = build_str_condition(cond_dict)
+            case "null":
+                cond = build_null_condition(cond_dict)
+            case _:
+                pass
+
+        # handle NOT operator
+        not_op = "NOT " if cond_dict["NOT"] else ""
+
+        # build final condition query
+        cond_query = f"{not_op}{cond(comp_col)}"
+        
+
+        return cond_query
 
     def build_stat_expr(self, expr_dict: dict, ptable: str, ppk: str) -> str:
         r"""Builds a SQL query for the static expression part of the RTGL query.
@@ -317,21 +388,27 @@ class Converter(ABC):
         div_line1, div_line2 = get_div_lines("STAT_AGGREGATION")
 
         # extract aggregation table
-        aggr_table = aggr_table_name = aggr_dict["Table"].value
-
+        aggr_table = aggr_table_name = self.path_builder.find_orig_src_table(aggr_dict["Table"].value)
+        aggr_column = self._find_column(aggr_table, aggr_dict["Column"].value)
+        
+        if aggr_table != ptable:
+            aggr_dict["Column"].value = f"__TABLE0__" + aggr_column
+            
+        if aggr_column == "*":
+            aggr_dict["Column"].value = ppk
+        
         # build SQL aggregation function with proper column references
-        # print(aggr_dict)
-        aggr_dict["Column"].value = self._find_column(aggr_table, aggr_dict["Column"].value)
-        aggr_func = build_aggr_func(aggr_dict, ptable)
+        aggr_func = build_aggr_func(aggr_dict)
         aggr = format_query(aggr_func("__JOINED_TABLES__"))
-
+        aggr_dict["Column"].value = aggr_column
+        
         # build static WHERE query if exists
         if where := aggr_dict["Where"]:
             aggr_ppk = self._find_pkey(aggr_table)
             aggr_table = self.build_stat_where(where.value, aggr_table, aggr_ppk)
             aggr_table = f"({aggr_table}\n)"
 
-        joined_tables = self.build_stat_join(aggr_table_name, aggr_table, ptable)
+        joined_tables = self.build_stat_join(aggr_dict["Table"].value, aggr_table, ptable)
 
         # build aggregation query
         aggr_query = (
@@ -362,13 +439,13 @@ class Converter(ABC):
         # create division markers for formatted output
         div_line1, div_line2 = get_div_lines("ID_DOT_ID")
 
-        table = some_dict["Table"].value
+        table = self.path_builder.find_orig_src_table(some_dict["Table"].value)
         column = self._find_column(table, some_dict["Column"].value)
 
         # column to compare in condition
         comp_col = "comp_col"
 
-        joined_tables = self.build_stat_join(table, table, ptable)
+        joined_tables = self.build_stat_join(some_dict["Table"].value, table, ptable)
 
         prefix = f"__TABLE0__" if table != ptable else ""
         id_dot_id_query = (
@@ -398,12 +475,12 @@ class Converter(ABC):
         # create division markers for formatted output
         div_line1, div_line2 = get_div_lines("TABLES_JOIN")
 
-        path = self.path_builder.build_path(src_table, dst_table)
+        src_table, path = self.path_builder.find_shortest_path(src_table, dst_table)
 
-        if src_table == dst_table:
-            return src_table
-        
-        cur_table = add_prefix(src_table_query, "__TABLE0__")
+        cur_table = src_table_query
+        if path:
+            cur_table = add_prefix(src_table_query, "__TABLE0__")
+
         cur_table = (
             "SELECT\n"
             "    *\n"
@@ -535,7 +612,7 @@ class Converter(ABC):
         if table_obj:
             # if column is "*" -> return primary key column
             if column == "*":
-                return table_obj.pkey_col
+                return table_obj.pkey_col if table_obj.pkey_col else "*"
         
             return column.lower()
                 
