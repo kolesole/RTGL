@@ -16,24 +16,33 @@ query
     ;
 
 query_tmp
-    : predict_tmp for_each_tmp (where_tmp)? (assuming)? SEMICOLON
+    : common_path_exprs? predict_tmp for_each_tmp where_tmp? assuming? SEMICOLON
     ;
 
 query_stat
-    : predict_stat for_each_stat (where_stat)? SEMICOLON
+    : common_path_exprs? predict_stat for_each_stat where_stat? SEMICOLON
     ;
 
 // ============================================================================
 // QUERY CLAUSES
 // ============================================================================
 
+// Common Path Expressions (CPEs): defines reusable paths for the query
+common_path_exprs
+    : WITH common_path_expr (COMMA common_path_expr)*
+    ;
+
+common_path_expr
+    : ID AS OPEN_PAREN id_dot_id (ARROW id_dot_id)+ CLOSE_PAREN
+    ;
+    
 // FOR_EACH clause: specifies the table/sql injection and column to iterate over
 for_each_tmp
-    : FOR_EACH (ID | sql_injection_tmp) DOT (ID | STAR) (where_stat)?
+    : FOR_EACH table_tmp DOT column (where_stat)?
     ;
 
 for_each_stat
-    : FOR_EACH (ID | sql_injection_stat) DOT (ID | STAR) (where_stat)?
+    : FOR_EACH table_stat DOT column (where_stat)?
     ;
 
 // PREDICT clause: specifies what to predict (aggregation, expression, or table/sql injection with column)
@@ -45,12 +54,7 @@ predict_tmp
 predict_stat
     : PREDICT aggregation_stat (RANK_TOP INT | CLASSIFY)?  
     | PREDICT expr_or_stat  
-    | PREDICT (ID | sql_injection_stat) DOT (ID | STAR)
-    ;
-
-// ASSUMING clause: specifies conditions that should be assumed to hold
-assuming    
-    : ASSUMING expr_or_tmp
+    | PREDICT table_stat DOT column
     ;
 
 // WHERE clause: filters results based on conditions
@@ -60,6 +64,11 @@ where_tmp
 
 where_stat
     : WHERE expr_or_stat 
+    ;
+
+// ASSUMING clause: specifies conditions that should be assumed to hold
+assuming    
+    : ASSUMING expr_or_tmp
     ;
 
 // ============================================================================
@@ -101,11 +110,11 @@ expr_term_stat
 
 // A condition consists of a subject (aggregation or table/sql ibjection with column reference) and a comparison
 condition_tmp
-    : (NOT)? aggregation_tmp (num_condition | str_condition | null_check_condition)
+    : NOT? aggregation_tmp (num_condition | str_condition | null_check_condition)
     ;
 
 condition_stat
-    : (NOT)? (aggregation_stat | (ID | sql_injection_stat) DOT (ID | STAR))  
+    : NOT? (aggregation_stat | table_stat DOT column)  
       (num_condition | str_condition | null_check_condition)
     ;
 
@@ -130,11 +139,11 @@ null_check_condition
 
 // Aggregation: specifies an aggregation function applied to a table/sql injection column, optionally with a  static WHERE clause and time inteval for temporal queries
 aggregation_tmp
-    : AGGR_FUNC OPEN_PAREN (ID | sql_injection_tmp) DOT (ID | STAR) (where_stat)? COMMA INT COMMA INT COMMA TIME_MEASURE_UNIT CLOSE_PAREN
+    : AGGR_FUNC OPEN_PAREN table_tmp DOT column where_stat? COMMA INT COMMA INT COMMA TIME_MEASURE_UNIT CLOSE_PAREN
     ;
 
 aggregation_stat
-    : AGGR_FUNC OPEN_PAREN (ID | sql_injection_stat) DOT (ID | STAR) (where_stat)? CLOSE_PAREN
+    : AGGR_FUNC OPEN_PAREN table_stat DOT column where_stat? CLOSE_PAREN
     ;
 
 // ============================================================================
@@ -144,26 +153,41 @@ aggregation_stat
 // SQL injection: allows specifying a SQL query with parameters.
 sql_injection_tmp
     : SQL_INJECTION_BODY
-      OPEN_BRACE ID CLOSE_BRACE // name
-      OPEN_BRACE (ID)? CLOSE_BRACE // pkey_col
-      OPEN_BRACE ((fk_col_to_pk_table COMMA)* fk_col_to_pk_table)? CLOSE_BRACE  // fkey_col_to_pkey_table list
-      OPEN_BRACE ((fk_table_col COMMA)* fk_table_col)? CLOSE_BRACE // fkey_table_col list
-      OPEN_BRACE ID CLOSE_BRACE // time_col 
+      OPEN_BRACE table_name=ID CLOSE_BRACE // table name
+      OPEN_BRACE pkey_col=ID? CLOSE_BRACE // pkey_col
+      OPEN_BRACE ((fkey_col_to_pkey_table COMMA)* fkey_col_to_pkey_table)? CLOSE_BRACE  // fkey_col_to_pkey_table list
+      OPEN_BRACE ((id_dot_id COMMA)* id_dot_id)? CLOSE_BRACE // fkey_table_col list
+      OPEN_BRACE time_col=ID? CLOSE_BRACE // time_col 
     ;
 
 sql_injection_stat
     : SQL_INJECTION_BODY
-      OPEN_BRACE ID CLOSE_BRACE // name
-      OPEN_BRACE (ID)? CLOSE_BRACE // pkey_col
-      OPEN_BRACE ((fk_col_to_pk_table COMMA)* fk_col_to_pk_table)? CLOSE_BRACE  // fkey_col_to_pkey_table list
-      OPEN_BRACE ((fk_table_col COMMA)* fk_table_col)? CLOSE_BRACE // fkey_table_col list
+      OPEN_BRACE table_name=ID CLOSE_BRACE // table name
+      OPEN_BRACE pkey_col=ID? CLOSE_BRACE // pkey_col
+      OPEN_BRACE (fkey_col_to_pkey_table (COMMA fkey_col_to_pkey_table)*)? CLOSE_BRACE  // fkey_col_to_pkey_table list
+      OPEN_BRACE (id_dot_id (COMMA id_dot_id)*)? CLOSE_BRACE // fkey_table_col list
     ;
 
 // Parameters for SQL injection.
-fk_col_to_pk_table
+fkey_col_to_pkey_table
     : ID ARROW ID
     ;
-    
-fk_table_col
-    : ID COLON ID
+
+table_tmp
+    : ID 
+    | sql_injection_tmp
+    ;
+
+table_stat
+    : ID
+    | sql_injection_stat
+    ;
+
+column
+    : ID
+    | STAR
+    ;
+
+id_dot_id
+    : ID DOT ID
     ;

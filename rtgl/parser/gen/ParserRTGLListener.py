@@ -35,6 +35,24 @@ class ParserRTGLListener(ParseTreeListener):
         pass
 
 
+    # Enter a parse tree produced by ParserRTGL#common_path_exprs.
+    def enterCommon_path_exprs(self, ctx:ParserRTGL.Common_path_exprsContext):
+        pass
+
+    # Exit a parse tree produced by ParserRTGL#common_path_exprs.
+    def exitCommon_path_exprs(self, ctx:ParserRTGL.Common_path_exprsContext):
+        pass
+
+
+    # Enter a parse tree produced by ParserRTGL#common_path_expr.
+    def enterCommon_path_expr(self, ctx:ParserRTGL.Common_path_exprContext):
+        pass
+
+    # Exit a parse tree produced by ParserRTGL#common_path_expr.
+    def exitCommon_path_expr(self, ctx:ParserRTGL.Common_path_exprContext):
+        pass
+
+
     # Enter a parse tree produced by ParserRTGL#for_each_tmp.
     def enterFor_each_tmp(self, ctx:ParserRTGL.For_each_tmpContext):
         pass
@@ -71,15 +89,6 @@ class ParserRTGLListener(ParseTreeListener):
         pass
 
 
-    # Enter a parse tree produced by ParserRTGL#assuming.
-    def enterAssuming(self, ctx:ParserRTGL.AssumingContext):
-        pass
-
-    # Exit a parse tree produced by ParserRTGL#assuming.
-    def exitAssuming(self, ctx:ParserRTGL.AssumingContext):
-        pass
-
-
     # Enter a parse tree produced by ParserRTGL#where_tmp.
     def enterWhere_tmp(self, ctx:ParserRTGL.Where_tmpContext):
         pass
@@ -95,6 +104,15 @@ class ParserRTGLListener(ParseTreeListener):
 
     # Exit a parse tree produced by ParserRTGL#where_stat.
     def exitWhere_stat(self, ctx:ParserRTGL.Where_statContext):
+        pass
+
+
+    # Enter a parse tree produced by ParserRTGL#assuming.
+    def enterAssuming(self, ctx:ParserRTGL.AssumingContext):
+        pass
+
+    # Exit a parse tree produced by ParserRTGL#assuming.
+    def exitAssuming(self, ctx:ParserRTGL.AssumingContext):
         pass
 
 
@@ -233,21 +251,48 @@ class ParserRTGLListener(ParseTreeListener):
         pass
 
 
-    # Enter a parse tree produced by ParserRTGL#fk_col_to_pk_table.
-    def enterFk_col_to_pk_table(self, ctx:ParserRTGL.Fk_col_to_pk_tableContext):
+    # Enter a parse tree produced by ParserRTGL#fkey_col_to_pkey_table.
+    def enterFkey_col_to_pkey_table(self, ctx:ParserRTGL.Fkey_col_to_pkey_tableContext):
         pass
 
-    # Exit a parse tree produced by ParserRTGL#fk_col_to_pk_table.
-    def exitFk_col_to_pk_table(self, ctx:ParserRTGL.Fk_col_to_pk_tableContext):
+    # Exit a parse tree produced by ParserRTGL#fkey_col_to_pkey_table.
+    def exitFkey_col_to_pkey_table(self, ctx:ParserRTGL.Fkey_col_to_pkey_tableContext):
         pass
 
 
-    # Enter a parse tree produced by ParserRTGL#fk_table_col.
-    def enterFk_table_col(self, ctx:ParserRTGL.Fk_table_colContext):
+    # Enter a parse tree produced by ParserRTGL#table_tmp.
+    def enterTable_tmp(self, ctx:ParserRTGL.Table_tmpContext):
         pass
 
-    # Exit a parse tree produced by ParserRTGL#fk_table_col.
-    def exitFk_table_col(self, ctx:ParserRTGL.Fk_table_colContext):
+    # Exit a parse tree produced by ParserRTGL#table_tmp.
+    def exitTable_tmp(self, ctx:ParserRTGL.Table_tmpContext):
+        pass
+
+
+    # Enter a parse tree produced by ParserRTGL#table_stat.
+    def enterTable_stat(self, ctx:ParserRTGL.Table_statContext):
+        pass
+
+    # Exit a parse tree produced by ParserRTGL#table_stat.
+    def exitTable_stat(self, ctx:ParserRTGL.Table_statContext):
+        pass
+
+
+    # Enter a parse tree produced by ParserRTGL#column.
+    def enterColumn(self, ctx:ParserRTGL.ColumnContext):
+        pass
+
+    # Exit a parse tree produced by ParserRTGL#column.
+    def exitColumn(self, ctx:ParserRTGL.ColumnContext):
+        pass
+
+
+    # Enter a parse tree produced by ParserRTGL#id_dot_id.
+    def enterId_dot_id(self, ctx:ParserRTGL.Id_dot_idContext):
+        pass
+
+    # Exit a parse tree produced by ParserRTGL#id_dot_id.
+    def exitId_dot_id(self, ctx:ParserRTGL.Id_dot_idContext):
         pass
 
 

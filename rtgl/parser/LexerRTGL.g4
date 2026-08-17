@@ -8,9 +8,9 @@ lexer grammar LexerRTGL ;
 // MAIN FUNCTION KEYWORDS
 // ============================================================================
 
-ASSUMING                                          
-    : 'ASSUMING' 
-    | 'assuming'    
+WITH
+    : 'WITH' 
+    | 'with'
     ;
 FOR_EACH
     : ('FOR' | 'for') WS+ ('EACH' | 'each')
@@ -22,6 +22,17 @@ PREDICT
 WHERE
     : 'WHERE' 
     | 'where'
+    ;
+ASSUMING                                          
+    : 'ASSUMING' 
+    | 'assuming'    
+    ;
+// IN_PATH
+//     : ('IN' | 'in') WS+ ('PATH' | 'path')
+//     ;
+AS
+    : 'AS'
+    | 'as'
     ;
 CLASSIFY
     : 'CLASSIFY' 
@@ -45,6 +56,7 @@ AGGR_FUNC
     | MAX       
     | MIN   
     | SUM
+    // | LENGTH
     ;
 AVG            
     : 'AVG' 
@@ -82,6 +94,10 @@ SUM
     : 'SUM'      
     | 'sum'      
     ;
+// LENGTH
+//     : 'LENGTH'
+//     | 'length'
+//     ;
 
 // ============================================================================
 // COMPARISON OPERATORS

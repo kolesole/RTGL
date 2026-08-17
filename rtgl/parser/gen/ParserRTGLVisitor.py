@@ -24,6 +24,16 @@ class ParserRTGLVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
+    # Visit a parse tree produced by ParserRTGL#common_path_exprs.
+    def visitCommon_path_exprs(self, ctx:ParserRTGL.Common_path_exprsContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by ParserRTGL#common_path_expr.
+    def visitCommon_path_expr(self, ctx:ParserRTGL.Common_path_exprContext):
+        return self.visitChildren(ctx)
+
+
     # Visit a parse tree produced by ParserRTGL#for_each_tmp.
     def visitFor_each_tmp(self, ctx:ParserRTGL.For_each_tmpContext):
         return self.visitChildren(ctx)
@@ -44,11 +54,6 @@ class ParserRTGLVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
-    # Visit a parse tree produced by ParserRTGL#assuming.
-    def visitAssuming(self, ctx:ParserRTGL.AssumingContext):
-        return self.visitChildren(ctx)
-
-
     # Visit a parse tree produced by ParserRTGL#where_tmp.
     def visitWhere_tmp(self, ctx:ParserRTGL.Where_tmpContext):
         return self.visitChildren(ctx)
@@ -56,6 +61,11 @@ class ParserRTGLVisitor(ParseTreeVisitor):
 
     # Visit a parse tree produced by ParserRTGL#where_stat.
     def visitWhere_stat(self, ctx:ParserRTGL.Where_statContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by ParserRTGL#assuming.
+    def visitAssuming(self, ctx:ParserRTGL.AssumingContext):
         return self.visitChildren(ctx)
 
 
@@ -134,13 +144,28 @@ class ParserRTGLVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
-    # Visit a parse tree produced by ParserRTGL#fk_col_to_pk_table.
-    def visitFk_col_to_pk_table(self, ctx:ParserRTGL.Fk_col_to_pk_tableContext):
+    # Visit a parse tree produced by ParserRTGL#fkey_col_to_pkey_table.
+    def visitFkey_col_to_pkey_table(self, ctx:ParserRTGL.Fkey_col_to_pkey_tableContext):
         return self.visitChildren(ctx)
 
 
-    # Visit a parse tree produced by ParserRTGL#fk_table_col.
-    def visitFk_table_col(self, ctx:ParserRTGL.Fk_table_colContext):
+    # Visit a parse tree produced by ParserRTGL#table_tmp.
+    def visitTable_tmp(self, ctx:ParserRTGL.Table_tmpContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by ParserRTGL#table_stat.
+    def visitTable_stat(self, ctx:ParserRTGL.Table_statContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by ParserRTGL#column.
+    def visitColumn(self, ctx:ParserRTGL.ColumnContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by ParserRTGL#id_dot_id.
+    def visitId_dot_id(self, ctx:ParserRTGL.Id_dot_idContext):
         return self.visitChildren(ctx)
 
 
