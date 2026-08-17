@@ -4,14 +4,15 @@ from abc import ABC, abstractmethod
 from enum import Enum, StrEnum, auto
 
 from rtgl.base import Database, Table
-from rtgl.validator.error import ErrorCollector
+from rtgl.converter.path_builder import PathBuilder
+from rtgl.validator.diagnostics import IssueCollector
 from rtgl.visitor import ParsedValue
 
 # aggregation types that can be used with numeric conditions
 AGGR_NUM_COND = {"avg", "count", "count_distinct", "first", "last", "max", "min", "sum"}
 
 # aggregation types that can be used with string conditions
-AGGR_STR_COND = {"first", "last"}
+AGGR_STR_COND = {"first", "last"} # , "length"}
 
 # aggregation types that can be used with NULL checks conditions
 AGGR_NULL_COND = AGGR_NUM_COND | {"list_distinct"}
@@ -49,21 +50,23 @@ class Validator(ABC):
     Provides common validation logic for both static and temporal queries.
     """
 
-    def __init__(self, collector: ErrorCollector, db: Database) -> None:
+    def __init__(self, collector: IssueCollector, db: Database) -> None:
         """Initializes the validator with an error collector and database.
 
         Args:
             collector (ErrorCollector): *`ErrorCollector`* to accumulate validation errors.
-            db (Database): *`Database`* instance containing schema information.
+            db (Database): Normalized *`Database`* instance containing schema information.
 
         Returns:
             out (None):
         """
         self.collector = collector
         self.db = db
+        self.cte_dict = {}
+        self.path_builder = None
 
     @abstractmethod
-    def validate(self, query_dict: dict) -> None:
+    def validate(self, query_dict: dict, cte_dict: dict, path_builder: PathBuilder) -> None:
         """Top-level validation entry point.
 
         Note:
@@ -152,7 +155,7 @@ class Validator(ABC):
                 # LIST_DISTINCT is the only aggregation that supports CLASSIFY and RANK_TOP
                 if aggr_type.lower() != "list_distinct":
                     if classify_token := predict_dict["Classify"]:
-                        self.collector.val_error(
+                        self.collector.add_error(
                             line=classify_token.line,
                             column=classify_token.column,
                             msg=(
@@ -162,7 +165,7 @@ class Validator(ABC):
                         )
 
                     if rank_top_token := predict_dict["RankTop"]:
-                        self.collector.val_error(
+                        self.collector.add_error(
                             line=rank_top_token.line,
                             column=rank_top_token.column,
                             msg=(
@@ -175,7 +178,7 @@ class Validator(ABC):
                 if k_token := predict_dict["K"]:
                     k = int(k_token.value)
                     if k <= 0:
-                        self.collector.val_error(
+                        self.collector.add_error(
                             line=k_token.line,
                             column=k_token.column,
                             msg=f"K in RANK_TOP K must be a positive integer, found {k}"
@@ -282,21 +285,21 @@ class Validator(ABC):
                 match cond_dict["CType"]:
                     case "num":
                         if aggr_type.lower() not in AGGR_NUM_COND:
-                            self.collector.val_error(
+                            self.collector.add_error(
                                 line=condition.line,
                                 column=condition.column,
                                 msg=f"Aggregation type '{aggr_type}' cannot be used in numeric condition"
                             )
                     case "str":
                         if aggr_type.lower() not in AGGR_STR_COND:
-                            self.collector.val_error(
+                            self.collector.add_error(
                                 line=condition.line,
                                 column=condition.column,
                                 msg=f"Aggregation type '{aggr_type}' cannot be used in string condition"
                             )
                     case "null":
                         if aggr_type.lower() not in AGGR_NULL_COND:
-                            self.collector.val_error(
+                            self.collector.add_error(
                                 line=condition.line,
                                 column=condition.column,
                                 msg=f"Aggregation type '{aggr_type}' cannot be used in NULL condition"
@@ -331,6 +334,12 @@ class Validator(ABC):
 
         # validate WHERE clause inside the aggregation if present
         if where := aggr_dict["Where"]:
+            if not self._get_pkey_col(table_token.value):
+                self.collector.add_error(
+                    line=table_token.line,
+                    column=table_token.column,
+                    msg=f"Table '{table_token.value}' in static aggregation does not have a primary key column, which is required for WHERE filtering"
+                )
             self.validate_where(where, table_token.value, stat=True)
 
         # validate table.column in the aggregation
@@ -338,7 +347,7 @@ class Validator(ABC):
 
     ################## Helper methods ##################
 
-    def _get_table(self, table_name: str) -> Table | None:
+    def _get_table(self, table_name: str) -> tuple[Table | None, str] | None:
         r"""Retrieves *`Table`* object from the database using table name (case-insensitive).
 
         Args:
@@ -347,14 +356,11 @@ class Validator(ABC):
         Returns:
             out (Table | None): *`Table`* object corresponding to the given name, or None if not found.
         """
-        if not (table_dict := self.db.table_dict):
-            return None
+        if table := self.cte_dict.get(table_name):
+            return table[0], "cte"
 
-        # k ... name of the table
-        # v ... Table object
-        for k, v in table_dict.items():
-            if k.lower() == table_name.lower():
-                return v
+        if table := self.db.table_dict.get(table_name):
+            return table, "db"
 
         return None
 
@@ -367,10 +373,10 @@ class Validator(ABC):
         Returns:
             pkey_col (str | None): Name of the primary key column, or None if no primary key or table not found.
         """
-        if not (table := self._get_table(table_name)):
+        if not (table_inf := self._get_table(table_name)):
             return None
-
-        return table.pkey_col
+        
+        return table_inf[0].pkey_col
 
     def _is_table_in_db(self, table_name: str) -> bool:
         r"""Checks if a table exists in the database (case-insensitive).
@@ -381,9 +387,7 @@ class Validator(ABC):
         Returns:
             out (bool): True if the table exists, False otherwise.
         """
-        table = self._get_table(table_name)
-
-        return table is not None
+        return self._get_table(table_name) is not None
 
     def _is_column_in_table(self, table_name: str, column_name: str) -> bool:
         r"""Checks if a column exists in a table (case-insensitive).
@@ -398,11 +402,17 @@ class Validator(ABC):
         if column_name == "*":
             return True
 
-        if not (table := self._get_table(table_name)):
+        if not (table_inf := self._get_table(table_name)):
             return False
 
-        # k ... name of the column
-        return column_name.lower() in (k.lower() for k in table.df)
+        table, loc = table_inf
+
+        if loc == "cte":
+            return True
+        elif loc == "db":
+            return column_name in table.df
+        else:
+            pass
 
     def _is_pkey_col(self, table_name: str, column_name: str) -> bool:
         r"""Checks if a column is the primary key of a table (case-insensitive).
@@ -417,7 +427,7 @@ class Validator(ABC):
         if not (pkey_col := self._get_pkey_col(table_name)):
             return False
 
-        return column_name == "*" or pkey_col.lower() == column_name.lower()
+        return column_name == "*" or pkey_col == column_name
 
     def _has_time_col(self, table_name: str) -> bool:
         r"""Checks if a table has a time column (case-insensitive).
@@ -428,10 +438,10 @@ class Validator(ABC):
         Returns:
             bool: True if the table has a time column, False otherwise.
         """
-        if not (table := self._get_table(table_name)):
+        if not (table_inf := self._get_table(table_name)):
             return False
 
-        return table.time_col is not None
+        return table_inf[0].time_col is not None
 
     def _has_conn_with_main_table(self, table_name: str, ptable_name: str) -> bool:
         r"""Checks if a table is connected to the parent table via foreign key (case-insensitive).
@@ -444,15 +454,27 @@ class Validator(ABC):
             bool: True if the table is the parent itself or has a foreign key
                 referencing it, False otherwise.
         """
-        if table_name.lower() == ptable_name.lower():
+        if table_name == ptable_name:
             return True
+        
+        paths = self.path_builder.build_paths(table_name, ptable_name)
 
-        if not (table := self._get_table(table_name)):
+        if len(paths) == 0:
             return False
-
-        if not (fkey_col_to_pkey_table := table.fkey_col_to_pkey_table):
-            return False
-
-        # _k ... name of the foreign key column
-        # v ... name of the parent table that the foreign key references
-        return any(ptable_name.lower() == v.lower() for _k, v in fkey_col_to_pkey_table.items())
+        elif len(paths) == 1:
+            return True
+        else:
+            if len(paths[0]) == len(paths[1]):
+                self.collector.add_error(
+                    line=0,
+                    column=0,
+                    msg=f"Multiple paths, with the shortest length, exist between table '{table_name}' and parent table '{ptable_name}', which is ambiguous"
+                )
+            else:
+                # self.collector.add_error(
+                #     line=0,
+                #     column=0,
+                #     msg=f"Multiple paths exist between table '{table_name}' and parent table '{ptable_name}', which is ambiguous"
+                # )
+                pass
+            return True

@@ -1,7 +1,8 @@
 """Static query validator class for RTGL."""
 
 from rtgl.base import Database
-from rtgl.validator.error import ErrorCollector
+from rtgl.converter.path_builder import PathBuilder
+from rtgl.validator.diagnostics import IssueCollector
 from rtgl.validator.validator import AggrContext, IdDotIdContext, Validator
 from rtgl.visitor import ParsedValue
 
@@ -12,7 +13,7 @@ class SValidator(Validator):
     Implements abstract methods from the base *`Validator`* class.
     """
 
-    def __init__(self, collector: ErrorCollector, db: Database) -> None:
+    def __init__(self, collector: IssueCollector, db: Database) -> None:
         """Initializes the Static Validator with an error collector and database.
 
         Args:
@@ -24,7 +25,7 @@ class SValidator(Validator):
         """
         super().__init__(collector, db)
 
-    def validate(self, query_dict: dict) -> None:
+    def validate(self, query_dict: dict, cte_dict: dict, path_builder: PathBuilder) -> None:
         r"""Validates a parsed query dictionary.
 
         Ensures the query is static (not temporal) and delegates to validate_query.
@@ -35,15 +36,21 @@ class SValidator(Validator):
         Returns:
             out (None):
         """
+        self.cte_dict = cte_dict
+        self.path_builder = path_builder
+
         # check if the query is static
         if query := query_dict["QueryStat"]:
             self.validate_query(query)
         elif query := query_dict["QueryTmp"]:
-            self.collector.val_error(
+            self.collector.add_error(
                 line=query.line,
                 column=query.column,
                 msg="For static converter, only static queries are supported, found temporal query"
             )
+
+        self.cte_dict = {}
+        self.path_builder = None
 
     def validate_query(self, query: ParsedValue) -> None:
         r"""Validates all components of a static query.
@@ -100,24 +107,25 @@ class SValidator(Validator):
 
         # check table existence
         if not self._is_table_in_db(table_name):
-            self.collector.val_error(
+            self.collector.add_error(
                 line=table_token.line,
                 column=table_token.column,
-                msg=f"Table '{table_name}' in {context} does not exist in database"
+                msg=f"Table '{table_name}' in {context} does not exist"
             )
 
         # check table relationship with parent
         if not self._has_conn_with_main_table(table_name, ptable_name):
-            self.collector.val_error(
+            self.collector.add_error(
                 line=table_token.line,
                 column=table_token.column,
-                msg=f"Table '{table_name}' in {context} is not connected to main table '{ptable_name}'"
+                msg=f"Table '{table_name}' in {context} is not connected (path does not exist) to main table '{ptable_name}'"
             )
 
-        # check column existence
         column_name = column_token.value
+        
+        # check column existence
         if not self._is_column_in_table(table_name, column_name):
-            self.collector.val_error(
+            self.collector.add_error(
                 line=column_token.line,
                 column=column_token.column,
                 msg=f"Column '{column_name}' in {context} does not exist in table '{table_name}'"
@@ -125,7 +133,7 @@ class SValidator(Validator):
 
         # FOR EACH requires a primary key column
         if context == IdDotIdContext.FROM_FOR_EACH and not self._is_pkey_col(table_name, column_name):
-            self.collector.val_error(
+            self.collector.add_error(
                 line=column_token.line,
                 column=column_token.column,
                 msg=f"Column '{column_name}' in {context} is not a primary key column of table '{table_name}'"

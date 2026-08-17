@@ -1,7 +1,8 @@
 """Temporal query validator class for RTGL."""
 
 from rtgl.base import Database
-from rtgl.validator.error import ErrorCollector
+from rtgl.converter.path_builder import PathBuilder
+from rtgl.validator.diagnostics import IssueCollector
 from rtgl.validator.validator import AggrContext, IdDotIdContext, Validator
 from rtgl.visitor import ParsedValue
 
@@ -13,7 +14,7 @@ class TValidator(Validator):
     In addition, implements validation logic for ASSUMING clause.
     """
 
-    def __init__(self, collector: ErrorCollector, db: Database) -> None:
+    def __init__(self, collector: IssueCollector, db: Database) -> None:
         """Initializes the Temporal Validator with an error collector and database.
 
         Args:
@@ -25,7 +26,7 @@ class TValidator(Validator):
         """
         super().__init__(collector, db)
 
-    def validate(self, query_dict: dict) -> None:
+    def validate(self, query_dict: dict, cte_dict: dict, path_builder: PathBuilder) -> None:
         r"""Validates a parsed query dictionary.
 
         Ensures the query is temporal (not static) and delegates to validate_query.
@@ -36,15 +37,21 @@ class TValidator(Validator):
         Returns:
             out (None):
         """
+        self.cte_dict = cte_dict
+        self.path_builder = path_builder
+
         # check if the query is temporal
         if query := query_dict["QueryTmp"]:
             self.validate_query(query)
         elif query := query_dict["QueryStat"]:
-            self.collector.val_error(
+            self.collector.add_error(
                 line=query.line,
                 column=query.column,
                 msg="For temporal converter, only temporal queries are supported, found static query"
             )
+
+        self.cte_dict = {}
+        self.path_builder = None
 
     def validate_query(self, query: ParsedValue) -> None:
         r"""Validates all components of a temporal query.
@@ -61,19 +68,19 @@ class TValidator(Validator):
         query_dict = query.value
         # validate FOR EACH clause and get parent table name
         # if FOR EACH is not present -> end validation
-        # otherwisr -> validate PREDICT, ASSUMING, and WHERE clauses
+        # otherwise -> validate PREDICT, WHERE, and ASSUMING clauses
         if ptable_name := self.validate_for_each(query_dict["ForEach"]):
             self.validate_predict(query_dict["Predict"], ptable_name)
-            self.validate_assuming(query_dict["Assuming"], ptable_name)
             self.validate_where(query_dict["Where"], ptable_name)
+            self.validate_assuming(query_dict["Assuming"], ptable_name)
 
     def validate_aggregation(self, aggr: ParsedValue, ptable_name: str, context: AggrContext) -> None:
         r"""Validate a temporal aggregation with time window constraints.
 
         Checks that:
         - Start < End
-        - Time ranges are non-negative in PREDICT or WHERE
-        - Time ranges are non-positive in ASSUMING (looking backward)
+        - Time ranges are non-positive in PREDICT or WHERE (looking backward)
+        - Time ranges are non-negative in ASSUMING (looking forward)
 
         Args:
             aggr (ParsedValue): Parsed aggregation to validate.
@@ -91,12 +98,18 @@ class TValidator(Validator):
         table_token = aggr_dict["Table"]
         column_token = aggr_dict["Column"]
 
-        # validate WHERE clause inside the aggregation if present
-        if where := aggr_dict["Where"]:
-            self.validate_where(where, table_token.value, stat=True)
-
         # validate table.column in the aggregation
         self.validate_id_dot_id(table_token, column_token, ptable_name, IdDotIdContext.FROM_TMP_AGGR)
+        
+        # validate WHERE clause inside the aggregation if present
+        if where := aggr_dict["Where"]:
+            if not self._get_pkey_col(table_token.value):
+                self.collector.add_error(
+                    line=table_token.line,
+                    column=table_token.column,
+                    msg=f"Table '{table_token.value}' in temporal aggregation does not have a primary key column, which is required for WHERE filtering"
+                )
+            self.validate_where(where, table_token.value, stat=True)
 
         # validate temporal window constraints
         start_token = aggr_dict["Start"]
@@ -106,7 +119,7 @@ class TValidator(Validator):
 
         # start time must be less than end time
         if start >= end:
-            self.collector.val_error(
+            self.collector.add_error(
                 line=start_token.line,
                 column=start_token.column,
                 msg=(
@@ -115,24 +128,24 @@ class TValidator(Validator):
                 )
             )
 
-        # PREDICT and WHERE look forward in time (non-negative range)
-        if context in [AggrContext.FROM_PREDICT, AggrContext.FROM_WHERE] and (start < 0 or end < 0):
-            self.collector.val_error(
+        # PREDICT and ASSUMING look forward in time (non-negative range)
+        if context in [AggrContext.FROM_PREDICT, AggrContext.FROM_ASSUMING] and (start < 0 or end < 0):
+            self.collector.add_error(
                 line=start_token.line,
                 column=start_token.column,
                 msg=(
-                    "Start and end time in temporal aggregation must be non-negative in PREDICT and WHERE clauses"
+                    "Start and end time in temporal aggregation must be non-negative in PREDICT and ASSUMING clauses"
                     f", found start={start}, end={end}"
                 )
             )
 
-        # ASSUMING looks backward in time (non-positive range)
-        if context == AggrContext.FROM_ASSUMING and (start > 0 or end > 0):
-            self.collector.val_error(
+        # WHERE looks backward in time (non-positive range)
+        if context == AggrContext.FROM_WHERE and (start > 0 or end > 0):
+            self.collector.add_error(
                 line=start_token.line,
                 column=start_token.column,
                 msg=(
-                    "Start and end time in temporal aggregation must be non-positive in ASSUMING clause, "
+                    "Start and end time in temporal aggregation must be non-positive in WHERE clause, "
                     f"found start={start}, end={end}"
                 )
             )
@@ -158,44 +171,33 @@ class TValidator(Validator):
 
         # check table existence
         if not self._is_table_in_db(table_name):
-            self.collector.val_error(
+            self.collector.add_error(
                 line=table_token.line,
                 column=table_token.column,
-                msg=f"Table '{table_name}' in {context} does not exist in database"
+                msg=f"Table '{table_name}' in {context} does not exist"
             )
 
         # check table relationship with parent
         if not self._has_conn_with_main_table(table_name, ptable_name):
-            if context == IdDotIdContext.FROM_COND:
-                if not self._has_conn_with_main_table(ptable_name, table_name):
-                    self.collector.val_error(
-                        line=table_token.line,
-                        column=table_token.column,
-                        msg=(
-                            f"Table '{table_name}' in {context} is not connected to main table '{ptable_name}'"
-                            f"and main table '{ptable_name}' is not connected to '{table_name}'"
-                        )
-                    )
-            else:
-                self.collector.val_error(
-                    line=table_token.line,
-                    column=table_token.column,
-                    msg=f"Table '{table_name}' in {context} is not connected to main table '{ptable_name}'"
-                )
-
-        # temporal aggregations require a time column
-        if context == IdDotIdContext.FROM_TMP_AGGR and not self._has_time_col(table_name):
-            self.collector.val_error(
+            self.collector.add_error(
                 line=table_token.line,
                 column=table_token.column,
-                msg=f"Table '{table_name}' in {context} does not have a time column"
+                msg=f"Table '{table_name}' in {context} is not connected (path does not exist) to main table '{ptable_name}'"
             )
+
+        # temporal aggregations require a time column
+        # if context == IdDotIdContext.FROM_TMP_AGGR and not self._has_time_col(table_name):
+        #     self.collector.add_error(
+        #         line=table_token.line,
+        #         column=table_token.column,
+        #         msg=f"Table '{table_name}' in {context} does not have a time column"
+        #     )
 
         column_name = column_token.value
 
         # check column existence
         if not self._is_column_in_table(table_name, column_name):
-            self.collector.val_error(
+            self.collector.add_error(
                 line=column_token.line,
                 column=column_token.column,
                 msg=f"Column '{column_name}' in {context} does not exist in table '{table_name}'"
@@ -203,7 +205,7 @@ class TValidator(Validator):
 
         # FOR EACH requires a primary key column
         if context == IdDotIdContext.FROM_FOR_EACH and not self._is_pkey_col(table_name, column_name):
-            self.collector.val_error(
+            self.collector.add_error(
                 line=column_token.line,
                 column=column_token.column,
                 msg=f"Column '{column_name}' in {context} is not a primary key column of table '{table_name}'"
