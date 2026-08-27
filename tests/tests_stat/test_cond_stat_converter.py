@@ -1,213 +1,68 @@
-"""Tests for static converter condition handling."""
+"""Tests for static converter condition handling (PREDICT table.column <op> value)."""
 
-from io import StringIO
-
-import pandas as pd
 import pytest
 
+from tests.helpers import assert_table_equals, ref_df_from_csv
 
-@pytest.mark.parametrize("pql_cond", [
-    ("!="),
-    ("<"),
-    ("<="),
-    ("=="),
-    (">"),
-    (">=")
+
+@pytest.mark.parametrize("op,expected_csv", [
+    pytest.param("!=", "fk, label\n1,  False\n2,  True\n3,  False", id="not_equal"),
+    pytest.param("<", "fk, label\n1,  False\n2,  False\n3,  False", id="less_than"),
+    pytest.param("<=", "fk, label\n1,  True\n2,  False\n3,  False", id="less_than_or_equal"),
+    pytest.param("==", "fk, label\n1,  True\n2,  False\n3,  False", id="equal"),
+    pytest.param(">", "fk, label\n1,  False\n2,  True\n3,  False", id="greater_than"),
+    pytest.param(">=", "fk, label\n1,  True\n2,  True\n3,  False", id="greater_than_or_equal"),
 ])
-def test_num_cond_tmp(static_converter,
-                      pql_cond):
-    pql_query = f"""
-        PREDICT studyInf.studyYear {pql_cond} 3
-        FOR EACH students.studentId;
+def test_predict_numeric_condition_evaluates_correctly(static_converter, op, expected_csv):
+    # Arrange
+    rtgl_query = f"""
+        PREDICT productMeta.priority {op} 3
+        FOR EACH products.productId;
     """
-    res_table = static_converter.convert(pql_query, execute=True)
-    res_df = res_table.df
-    res_fkey_col_to_pkey_table = res_table.fkey_col_to_pkey_table
-    res_pkey_col = res_table.pkey_col
-    res_time_col = res_table.time_col
 
-    match pql_cond:
-        case "!=":
-            ref_data = """
-                fk, label
-                0,  False
-                1,  True
-                2,  False
-            """
-        case "<":
-            ref_data = """
-                fk, label
-                0,  False
-                1,  False
-                2,  False
-            """
-        case "<=":
-             ref_data = """
-                fk, label
-                0,  True
-                1,  False
-                2,  False
-            """
-        case "==":
-            ref_data = """
-                fk, label
-                0,  True
-                1,  False
-                2,  False
-            """
-        case ">":
-            ref_data = """
-                fk, label
-                0,  False
-                1,  True
-                2,  False
-            """
-        case ">=":
-            ref_data = """
-                fk, label
-                0,  True
-                1,  True
-                2,  False
-            """
+    # Act
+    res_table = static_converter.convert(rtgl_query, execute=True)
 
-    ref_df = pd.read_csv(StringIO(ref_data),
-                         skipinitialspace=True,
-                         na_values=['nan', 'NaN', 'NONE', ''])
-
-    pd.testing.assert_frame_equal(res_df,
-                                  ref_df,
-                                  check_dtype=False,
-                                  atol=1e-5)
-    assert res_fkey_col_to_pkey_table == {"fk" : "students"}
-    assert res_pkey_col is None
-    assert res_time_col is None
+    # Assert
+    assert_table_equals(res_table, ref_df_from_csv(expected_csv), {"fk": "products"}, None, None)
 
 
-@pytest.mark.parametrize("pql_cond", [
-    ("CONTAINS"),
-    ("NOT CONTAINS"),
-    ("LIKE"),
-    ("NOT LIKE"),
-    ("STARTS WITH"),
-    ("ENDS WITH"),
-    ("=")
+@pytest.mark.parametrize("op,expected_csv", [
+    pytest.param("CONTAINS", "fk, label\n1,  False\n2,  True\n3,  True", id="contains"),
+    pytest.param("NOT CONTAINS", "fk, label\n1,  True\n2,  False\n3,  False", id="not_contains"),
+    pytest.param("LIKE", "fk, label\n1,  False\n2,  False\n3,  False", id="like"),
+    pytest.param("NOT LIKE", "fk, label\n1,  True\n2,  True\n3,  True", id="not_like"),
+    pytest.param("STARTS WITH", "fk, label\n1,  False\n2,  False\n3,  True", id="starts_with"),
+    pytest.param("ENDS WITH", "fk, label\n1,  False\n2,  True\n3,  False", id="ends_with"),
+    pytest.param("=", "fk, label\n1,  False\n2,  False\n3,  False", id="equal"),
 ])
-def test_str_cond_tmp(static_converter,
-                      pql_cond):
-    pql_query = f"""
-        PREDICT studyInf.mainInterest {pql_cond} "S"
-        FOR EACH students.studentId;
+def test_predict_string_condition_evaluates_correctly(static_converter, op, expected_csv):
+    # Arrange
+    rtgl_query = f"""
+        PREDICT productMeta.category {op} "S"
+        FOR EACH products.productId;
     """
-    res_table = static_converter.convert(pql_query, execute=True)
-    res_df = res_table.df
-    res_fkey_col_to_pkey_table = res_table.fkey_col_to_pkey_table
-    res_pkey_col = res_table.pkey_col
-    res_time_col = res_table.time_col
 
-    match pql_cond:
-        case "CONTAINS":
-            ref_data = """
-                fk, label
-                0,  False
-                1,  True
-                2,  True
-            """
-        case "NOT CONTAINS":
-            ref_data = """
-                fk, label
-                0,  True
-                1,  False
-                2,  False
-            """
-        case "LIKE":
-            ref_data = """
-                fk, label
-                0,  False
-                1,  False
-                2,  False
-            """
-        case "NOT LIKE":
-            ref_data = """
-                fk, label
-                0,  True
-                1,  True
-                2,  True
-            """
-        case "STARTS WITH":
-            ref_data = """
-                fk, label
-                0,  False
-                1,  False
-                2,  True
-            """
-        case "ENDS WITH":
-            ref_data = """
-                fk, label
-                0,  False
-                1,  True
-                2,  False
-            """
-        case "=":
-            ref_data = """
-                fk, label
-                0,  False
-                1,  False
-                2,  False
-            """
+    # Act
+    res_table = static_converter.convert(rtgl_query, execute=True)
 
-    ref_df = pd.read_csv(StringIO(ref_data),
-                         skipinitialspace=True,
-                         na_values=['nan', 'NaN', 'NONE', ''])
-
-    pd.testing.assert_frame_equal(res_df,
-                                  ref_df,
-                                  check_dtype=False,
-                                  atol=1e-5)
-    assert res_fkey_col_to_pkey_table == {"fk" : "students"}
-    assert res_pkey_col is None
-    assert res_time_col is None
+    # Assert
+    assert_table_equals(res_table, ref_df_from_csv(expected_csv), {"fk": "products"}, None, None)
 
 
-@pytest.mark.parametrize("pql_cond", [
-    ("IS NOT NULL"),
-    ("IS NULL")
+@pytest.mark.parametrize("op,expected_csv", [
+    pytest.param("IS NULL", "fk, label\n1,  False\n2,  False\n3,  True", id="is_null"),
+    pytest.param("IS NOT NULL", "fk, label\n1,  True\n2,  True\n3,  False", id="is_not_null"),
 ])
-def test_null_cond_tmp(static_converter,
-                       pql_cond):
-    pql_query = f"""
-        PREDICT studyInf.studyYear {pql_cond}
-        FOR EACH students.studentId;
+def test_predict_null_check_condition_evaluates_correctly(static_converter, op, expected_csv):
+    # Arrange
+    rtgl_query = f"""
+        PREDICT productMeta.priority {op}
+        FOR EACH products.productId;
     """
-    res_table = static_converter.convert(pql_query, execute=True)
-    res_df = res_table.df
-    res_fkey_col_to_pkey_table = res_table.fkey_col_to_pkey_table
-    res_pkey_col = res_table.pkey_col
-    res_time_col = res_table.time_col
 
-    match pql_cond:
-        case "IS NULL":
-            ref_data = """
-                fk, label
-                0,  False
-                1,  False
-                2,  True
-            """
-        case "IS NOT NULL":
-            ref_data = """
-                fk, label
-                0,  True
-                1,  True
-                2,  False
-            """
+    # Act
+    res_table = static_converter.convert(rtgl_query, execute=True)
 
-    ref_df = pd.read_csv(StringIO(ref_data),
-                         skipinitialspace=True,
-                         na_values=['nan', 'NaN', 'NONE', ''])
-
-    pd.testing.assert_frame_equal(res_df,
-                                  ref_df,
-                                  check_dtype=False,
-                                  atol=1e-5)
-    assert res_fkey_col_to_pkey_table == {"fk" : "students"}
-    assert res_pkey_col is None
-    assert res_time_col is None
+    # Assert
+    assert_table_equals(res_table, ref_df_from_csv(expected_csv), {"fk": "products"}, None, None)

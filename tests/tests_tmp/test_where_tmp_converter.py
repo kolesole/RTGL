@@ -1,138 +1,78 @@
-"""Tests for temporal converter WHERE clause handling."""
+"""Tests for temporal converter WHERE clause handling.
 
-from io import StringIO
+The temporal (trailing) WHERE clause requires a non-positive time window (it looks backward
+from the prediction timestamp) -- see `TValidator.validate_aggregation`. This intentionally
+differs from `PREDICT`/`ASSUMING` windows, which must be non-negative (forward-looking).
 
-import pandas as pd
+NOTE: a window `(start, end, UNIT)` covers `(ts+start, ts+end]` -- exclusive of the start
+boundary, inclusive of the end boundary -- regardless of whether it looks forward or backward.
+"""
+
 import pytest
 
-# def test_stat_where_tmp(temporal_converter):
-#     rtgl_query = """
-#         PREDICT AVG(grades.grade WHERE studyInf.favSubject CONTAINS "S", 0, 10, DAYS)
-#         FOR EACH students.studentId;
-#     """
-#     res_table = temporal_converter.convert(rtgl_query)
-#     res_df = res_table.df()
-#     res_fkey_col_to_pkey_table = res_table.fkey_col_to_pkey_table
-#     res_pkey_col = res_table.pkey_col
-#     res_time_col = res_table.time_col
-
-#     sql_query = """
-#         SELECT
-#             s.studentId AS fk,
-#             t.timestamp AS timestamp,
-#             AVG(g.grade) AS label
-#         FROM
-#             students s
-#         CROSS JOIN
-#             timestamp_df t
-#         LEFT JOIN
-#             grades g
-#         ON
-#             g.studentId = s.studentId
-#         AND
-#             g.date >= t.timestamp + INTERVAL '0 DAY'
-#         AND
-#             g.date < t.timestamp + INTERVAL '10 DAY'
-#         JOIN
-#             studyInf si
-#         ON
-#             si.studentId = s.studentId
-#         AND
-#             si.favSubject LIKE '%S%'
-#         GROUP BY
-#             s.studentId, t.timestamp
-#         ORDER BY
-#             t.timestamp, s.studentId;
-#     """
-#     ref_df = temporal_converter.conn.sql(sql_query).df()
-#     ref_time_col = "timestamp"
-
-#     print(res_df)
-#     print(ref_df)
-
-#     pd.testing.assert_frame_equal(res_df, ref_df)
-#     assert res_fkey_col_to_pkey_table is None
-#     assert res_pkey_col is None
-#     assert res_time_col == ref_time_col
+from tests.helpers import assert_table_equals, ref_df_from_csv
 
 
-def test_common_simple_where_tmp(temporal_converter):
+def test_where_filters_by_backward_looking_temporal_aggregation(temporal_converter):
+    # Arrange: COUNT is coalesced to 0, so every (product, timestamp) pair exists before the
+    # WHERE filter is applied; only the backward-looking LAST(...) IS NOT NULL check narrows it.
     rtgl_query = """
-        PREDICT AVG(grades.grade, 0, 10, DAYS)
-        FOR EACH students.studentId
-        WHERE LAST(grades.grade, 0, 10, DAYS) IS NOT NULL;
+        PREDICT COUNT(reviews.reviewId, 0, 10, DAYS)
+        FOR EACH products.productId
+        WHERE LAST(reviews.rating, -10, 0, DAYS) IS NOT NULL;
     """
-    res_table = temporal_converter.convert(rtgl_query, execute=True)
-    res_df = res_table.df
-    res_fkey_col_to_pkey_table = res_table.fkey_col_to_pkey_table
-    res_pkey_col = res_table.pkey_col
-    res_time_col = res_table.time_col
 
-    ref_data = """
+    # Act
+    res_table = temporal_converter.convert(rtgl_query, execute=True)
+
+    # Assert: at 2025-02-01 the backward window (2025-01-22, 2025-02-01] has no reviews at all
+    # for any product, so nothing survives there. At 2025-02-10 the backward window
+    # (2025-01-31, 2025-02-10] covers reviews 1-3: product 1's LAST rating is 3.0 (review 2,
+    # the most recent of its two rows), product 2's is 4.0 (review 3), product 3 has none.
+    expected = ref_df_from_csv("""
         fk, timestamp,  label
-        1,  2025-01-01, 2.0
-        0,  2025-01-10, 4.0
-        1,  2025-01-10, 2.0
-    """
-
-    ref_df = pd.read_csv(StringIO(ref_data),
-                         skipinitialspace=True,
-                         parse_dates=["timestamp"],
-                         na_values=['nan', 'NaN', 'NONE', ''])
-
-    pd.testing.assert_frame_equal(res_df,
-                                  ref_df,
-                                  check_dtype=False,
-                                  atol=1e-5)
-    assert res_fkey_col_to_pkey_table == {"fk" : "students"}
-    assert res_pkey_col is None
-    assert res_time_col == "timestamp"
+        1,  2025-02-10, 1.0
+        2,  2025-02-10, 0.0
+    """, date_cols=["timestamp"])
+    assert_table_equals(res_table, expected, {"fk": "products"}, None, "timestamp")
 
 
-@pytest.mark.parametrize("rtgl_op", [
-    ("AND"),
-    ("OR")
+@pytest.mark.parametrize("op,expected_csv", [
+    pytest.param("AND", """
+        fk, timestamp,  label
+        1,  2025-02-10, 1.0
+    """, id="and"),
+    pytest.param("OR", """
+        fk, timestamp,  label
+        1,  2025-02-01, 3.0
+        2,  2025-02-01, 1.0
+        3,  2025-02-01, 0.0
+        1,  2025-02-10, 1.0
+        2,  2025-02-10, 0.0
+        3,  2025-02-10, 0.0
+    """, id="or"),
 ])
-def test_common_nested_where_tmp(temporal_converter,
-                                 rtgl_op):
+def test_nested_where_combines_temporal_aggregations(temporal_converter, op, expected_csv):
+    # Arrange: cond1 = LAST(rating, -10, 0, DAYS) IS NOT NULL, true only for (1, 02-10) and
+    # (2, 02-10) (see the test above). cond2 = the FIRST(comment, ...) group is true whenever
+    # there is no comment in the backward window at all (IS NULL branch), or whenever the
+    # earliest comment in that window starts with "O": at 2025-02-01 nothing has a comment
+    # yet, so cond2 is true for every product; at 2025-02-10, product 1's earliest comment is
+    # "OPT" (true), product 2's is "PRP" (false, no comment and no "O" prefix), product 3 has
+    # none (true via the null branch). AND therefore keeps only (1, 02-10); OR keeps everything.
+    # Note the forward window (0, 10, DAYS) on the PREDICT COUNT itself covers (ts, ts+10], so
+    # product 1's count at 2025-02-01 is 3 (reviews 1, 2, and 4 -- 4 falls in-window here too).
     rtgl_query = f"""
-        PREDICT AVG(grades.grade, 0, 10, DAYS)
-        FOR EACH students.studentId
-        WHERE LAST(grades.grade, 0, 10, DAYS) IS NOT NULL
-        {rtgl_op} (FIRST(favSubjects.subject, 0, 10, DAYS) IS NULL
-        OR FIRST(favSubjects.subject, 0, 10, DAYS) CONTAINS "P");
+        PREDICT COUNT(reviews.reviewId, 0, 10, DAYS)
+        FOR EACH products.productId
+        WHERE LAST(reviews.rating, -10, 0, DAYS) IS NOT NULL
+        {op} (FIRST(reviews.comment, -10, 0, DAYS) IS NULL
+        OR FIRST(reviews.comment, -10, 0, DAYS) STARTS WITH "O");
     """
+
+    # Act
     res_table = temporal_converter.convert(rtgl_query, execute=True)
-    res_df = res_table.df
-    res_fkey_col_to_pkey_table = res_table.fkey_col_to_pkey_table
-    res_pkey_col = res_table.pkey_col
-    res_time_col = res_table.time_col
 
-    match rtgl_op:
-        case "AND":
-            ref_data = """
-                fk, timestamp,  label
-                1,  2025-01-01, 2.0
-                1,  2025-01-10, 2.0
-            """
-        case "OR":
-            ref_data = """
-                fk, timestamp,  label
-                0,  2025-01-01, 1.6
-                1,  2025-01-01, 2.0
-                0,  2025-01-10, 4.0
-                1,  2025-01-10, 2.0
-            """
-
-    ref_df = pd.read_csv(StringIO(ref_data),
-                         skipinitialspace=True,
-                         parse_dates=["timestamp"],
-                         na_values=['nan', 'NaN', 'NONE', ''])
-
-    pd.testing.assert_frame_equal(res_df,
-                                  ref_df,
-                                  check_dtype=False,
-                                  atol=1e-5)
-    assert res_fkey_col_to_pkey_table == {"fk" : "students"}
-    assert res_pkey_col is None
-    assert res_time_col == "timestamp"
+    # Assert
+    expected = ref_df_from_csv(expected_csv, date_cols=["timestamp"])
+    assert_table_equals(res_table, expected, {"fk": "products"}, None, "timestamp")

@@ -1,40 +1,46 @@
-"""Tests for temporal converter ASSUMING clause handling."""
+"""Tests for temporal converter ASSUMING clause handling.
 
-from io import StringIO
+ASSUMING requires a non-negative time window (it looks forward from the prediction timestamp,
+same as PREDICT) -- see `TValidator.validate_aggregation`.
+"""
 
-import pandas as pd
+import pytest
+
+from tests.helpers import assert_table_equals, ref_df_from_csv
 
 
-def test_assuming_tmp(temporal_converter):
-    rtgl_query = """
-        PREDICT AVG(grades.grade, 0, 10, DAYS)
-        FOR EACH students.studentId
-        ASSUMING LAST(grades.grade, -10, 0, DAYS) IS NULL;
-    """
-    res_table = temporal_converter.convert(rtgl_query, execute=True)
-    res_df = res_table.df
-    res_fkey_col_to_pkey_table = res_table.fkey_col_to_pkey_table
-    res_pkey_col = res_table.pkey_col
-    res_time_col = res_table.time_col
-
-    ref_data = """
+@pytest.mark.parametrize("op,expected_csv", [
+    pytest.param("IS NULL", """
         fk, timestamp,  label
-        0,  2025-01-01, 1.6
-        1,  2025-01-01, 2.0
-        0,  2025-01-10, 4.0
+        1,  2025-02-01, 3.0
+        3,  2025-02-01, 0.0
+        1,  2025-02-10, 1.0
+        2,  2025-02-10, 0.0
+        3,  2025-02-10, 0.0
+    """, id="is_null"),
+    pytest.param("IS NOT NULL", """
+        fk, timestamp,  label
+        2,  2025-02-01, 1.0
+    """, id="is_not_null"),
+])
+def test_assuming_restricts_entity_timestamp_pairs(temporal_converter, op, expected_csv):
+    # Arrange: a forward window (0, 10, DAYS) covers (ts, ts+10], so product 1's window at
+    # 2025-02-01 includes review 4 (2025-02-11, null rating) alongside its two other reviews.
+    # LAST is order-sensitive, so it picks review 4 (the chronologically last one) and comes
+    # back null there, even though non-null ratings exist earlier in the same window. Product
+    # 2 at 2025-02-01 is the only (product, timestamp) pair where LAST is non-null (4.0, from
+    # its single review). Everywhere else LAST is null (no reviews in window at all, or -- for
+    # product 1 at 2025-02-10 -- only review 4 again). COUNT is coalesced to 0, so every
+    # (product, timestamp) pair is available before ASSUMING narrows it down.
+    rtgl_query = f"""
+        PREDICT COUNT(reviews.reviewId, 0, 10, DAYS)
+        FOR EACH products.productId
+        ASSUMING LAST(reviews.rating, 0, 10, DAYS) {op};
     """
 
-    print(res_df)
+    # Act
+    res_table = temporal_converter.convert(rtgl_query, execute=True)
 
-    ref_df = pd.read_csv(StringIO(ref_data),
-                         skipinitialspace=True,
-                         parse_dates=["timestamp"],
-                         na_values=['nan', 'NaN', 'NONE', ''])
-
-    pd.testing.assert_frame_equal(res_df,
-                                  ref_df,
-                                  check_dtype=False,
-                                  atol=1e-5)
-    assert res_fkey_col_to_pkey_table == {"fk" : "students"}
-    assert res_pkey_col is None
-    assert res_time_col == "timestamp"
+    # Assert
+    expected = ref_df_from_csv(expected_csv, date_cols=["timestamp"])
+    assert_table_equals(res_table, expected, {"fk": "products"}, None, "timestamp")
