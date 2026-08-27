@@ -15,16 +15,16 @@ class Table:
     def __init__(
         self, df: pd.DataFrame, fkey_col_to_pkey_table: dict[str, str] = None, pkey_col: str = None, time_col: str = None
     ) -> None:
-        r"""Initializes *`Table`* with data and metadata.
+        r"""Initialize *`Table`* with data and metadata.
 
         Args:
             df (pd.DataFrame): The table data.
             fkey_col_to_pkey_table (dict, optional): Dictionary mapping foreign key column names to parent table names.
-                    Default = None.
+                Default = None.
             pkey_col (str, optional): Primary key column name.
-                    Default = None.
+                Default = None.
             time_col (str, optional): Timestamp column name for temporal tables.
-                    Default = None.
+                Default = None.
         """
         self.df = df
         self.fkey_col_to_pkey_table = fkey_col_to_pkey_table
@@ -32,7 +32,7 @@ class Table:
         self.time_col = time_col
 
     def __repr__(self) -> str:
-        r"""Returns a string representation of the table.
+        r"""Return a string representation of the table.
 
         Returns:
             out (str): Formatted string showing *`DataFrame`* and all metadata.
@@ -48,7 +48,7 @@ class Table:
 
     @cached_property
     def min_timestamp(self) -> pd.Timestamp | None:
-        r"""Returns the minimum timestamp in the time column, if it exists.
+        r"""Return the minimum timestamp in the time column, if it exists.
 
         Returns:
             min_timestamp (pd.Timestamp | None): Minimum timestamp in the time column, or None if no time column.
@@ -57,7 +57,7 @@ class Table:
 
     @cached_property
     def max_timestamp(self) -> pd.Timestamp | None:
-        r"""Returns the maximum timestamp in the time column, if it exists.
+        r"""Return the maximum timestamp in the time column, if it exists.
 
         Returns:
             max_timestamp (pd.Timestamp) | None: Maximum timestamp in the time column, or None if no time column.

@@ -5,7 +5,7 @@
 lexer grammar LexerRTGL ;
 
 // ============================================================================
-// MAIN FUNCTION KEYWORDS
+// MAIN KEYWORDS
 // ============================================================================
 
 WITH
@@ -27,9 +27,6 @@ ASSUMING
     : 'ASSUMING' 
     | 'assuming'    
     ;
-// IN_PATH
-//     : ('IN' | 'in') WS+ ('PATH' | 'path')
-//     ;
 AS
     : 'AS'
     | 'as'
@@ -56,7 +53,6 @@ AGGR_FUNC
     | MAX       
     | MIN   
     | SUM
-    // | LENGTH
     ;
 AVG            
     : 'AVG' 
@@ -94,10 +90,6 @@ SUM
     : 'SUM'      
     | 'sum'      
     ;
-// LENGTH
-//     : 'LENGTH'
-//     | 'length'
-//     ;
 
 // ============================================================================
 // COMPARISON OPERATORS
@@ -255,12 +247,12 @@ STRING
     | DOUBLE_QUOTE (~['\\\r\n] | BACKSLASH .)* DOUBLE_QUOTE
     ;
 
-// Identifiers (variable names, table names, column names)
+// Identifiers (variable names, table names, column names, etc.)
 ID        
     : [a-zA-Z_] [a-zA-Z_0-9]*
     ;
 
-// Body of SQL injection, allowing nested brackets
+// Body of SQL injection
 SQL_INJECTION_BODY
     : OPEN_BRACKET (~']' | SQL_INJECTION_BODY)* CLOSE_BRACKET
     ;

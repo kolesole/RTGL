@@ -1,12 +1,12 @@
 """Base RTGL converter class."""
 
-import sys
 from abc import ABC, abstractmethod
 
 import duckdb
 from antlr4 import CommonTokenStream, InputStream
 
-from rtgl.base import Database, Table
+from rtgl.base import DatabaseExplorer, Database, Table
+from rtgl.base.path_builder import PathBuilder
 from rtgl.converter.utils import (
     add_prefix,
     build_aggr_func,
@@ -17,7 +17,6 @@ from rtgl.converter.utils import (
     get_div_lines,
 )
 from rtgl.parser import LexerRTGL, ParserRTGL
-from rtgl.converter.path_builder import PathBuilder
 from rtgl.validator import IssueCollector, Validator
 from rtgl.visitor import Visitor
 
@@ -31,10 +30,10 @@ class Converter(ABC):
     """
 
     def __init__(self, db: Database) -> None:
-        r"""Base constructor.
+        r"""Initialize the base converter.
 
-        Initializes *`Database`* instance and normalized version, *`Visitor`* instance, 
-        and *`ErrorCollector`* instance for storing validation errors.
+        Initialize the *`Database`* instance and its normalized version, the *`Visitor`* instance,
+        and the *`IssueCollector`* instance for storing validation errors.
 
         Args:
             db (Database): *`Database`* instance containing the schema and data tables to be queried.
@@ -44,14 +43,17 @@ class Converter(ABC):
         """
         self.conn = None
         self.db = db
-        self.norm_db = self._normalize_db()
 
-        self.visitor = Visitor()
-        self.validator = None
         self.collector = IssueCollector()
+        self.visitor = Visitor()
+
         self.ctes = ""
         self.cte_dict = {}
-        self.path_builder = None
+
+        self.db_explorer: DatabaseExplorer = None
+        self.path_builder: PathBuilder = None
+        self.validator_class: type[Validator] = None
+        self.validator: Validator = None
 
     @abstractmethod
     def convert(self, rtgl_query: str, execute: bool = False) -> str | Table:
@@ -66,7 +68,7 @@ class Converter(ABC):
 
     @abstractmethod
     def build_for_each(self, for_each_dict: dict) -> tuple[str, str]:
-        r"""Abstrac method to build the SQL query for the for each part of the RTGL query.
+        r"""Abstract method to build the SQL query for the FOR EACH part of the RTGL query.
 
         Note:
             For explanation of the building process, see concrete subclasses.
@@ -103,26 +105,26 @@ class Converter(ABC):
     @abstractmethod
     def build_ctes(self, injections: list[tuple]) -> None:
         r"""Abstract method to build the SQL query for CTEs found in RTGL query.
-        
+
         Note:
             For explanation of the building process, see concrete subclasses.
-        """     
+        """
         pass
 
     @abstractmethod
     def build_join(self, src_table: str, src_table_query: str, dst_table: str, **kwargs: dict) -> str:
         r"""Abstract method to build the SQL query for joining two different tables.
-        
+
         Note:
             For explanation of the building process, see concrete subclasses.
         """
         pass
 
     def parse_query(self, rtgl_query: str) -> dict:
-        r"""Parses the RTGL query string into a dictionary representation.
+        r"""Parse the RTGL query string into a dictionary representation.
 
-        Parses a query, builds CTEs, and validates a dictionary representation, prints all errors on stderr
-        and exit the program if any errors were found.
+        Parse a query, build CTEs, and validate the resulting dictionary representation; print all errors
+        on stderr and exit the program if any errors were found.
 
         Args:
             rtgl_query (str): The RTGL query string to be parsed.
@@ -142,12 +144,14 @@ class Converter(ABC):
         # syntax errors collected during parsing
         self.collector.report(after_syntax_validation=True)
 
-        query_dict, injections, predict_path = self.visitor.visit(tree)
-        self.build_ctes(injections)
-        self.path_builder = PathBuilder(self.norm_db, self.cte_dict, predict_path)
+        query_dict = self.visitor.visit(tree)
+        self.build_ctes(query_dict["Injections"])
+        self.db_explorer = DatabaseExplorer(self.db, self.cte_dict)
+        self.path_builder = PathBuilder(self.db_explorer, query_dict["PredefinedPaths"])
 
-        if self.validator:
-            self.validator.validate(query_dict, self.cte_dict, self.path_builder)
+        if self.validator_class:
+            self.validator = self.validator_class(self.collector, self.db_explorer, self.path_builder)
+            self.validator.validate(query_dict)
 
         # semantic warnings and errors collected during validation
         self.collector.report(after_syntax_validation=False)
@@ -155,27 +159,26 @@ class Converter(ABC):
         return query_dict
 
     def build_stat_where(self, where_dict: dict, ptable: str, ppk: str) -> str:
-        r"""Builds the SQL query for the static WHERE part of the RTGL query.
+        r"""Build the SQL query for the static WHERE part of the RTGL query.
 
-        Filters a ptable before using.
+        Filter a ptable before using it.
 
         Args:
             where_dict (dict): Dictionary representation of the WHERE part of the RTGL query.
             ptable (str): Name of the parent table.
-            ppkey (str): Name of the primary key column in the parent table.
+            ppk (str): Name of the primary key column in the parent table.
 
         Returns:
             where_query (str): SQL query string representing the filtered ptable.
         """
-        # create division markers for formatted output
         div_line1, div_line2 = get_div_lines("STAT_WHERE")
 
-        if where_dict["IsSimple"] and self.path_builder.find_orig_src_table(where_dict["Table"]) == ptable:
+        if where_dict["IsSimple"]:
             expr_query = self.build_simple_expr(where_dict["Expr"].value)
             where_query = (
                 f"{div_line1}\n"
                 "SELECT\n"
-                "    *\n"                          
+                "    *\n"
                 "FROM\n"
                 f"    {ptable}\n"
                 "WHERE\n"
@@ -189,7 +192,7 @@ class Converter(ABC):
             where_query = (
                 f"{div_line1}\n"
                 "SELECT\n"
-                "    *\n"                          
+                "    *\n"
                 "FROM\n"
                 f"    {ptable}\n"
                 "WHERE\n"
@@ -204,15 +207,24 @@ class Converter(ABC):
         return where_query
 
     def build_simple_expr(self, expr_dict: dict) -> str:
+        r"""Build a raw boolean expression for a simple WHERE (no join/subquery needed).
+
+        Only reachable when `where_dict["IsSimple"]` is True, i.e. every leaf condition is a
+        plain `table.column` reference to the parent table itself (see
+        `Visitor._is_where_simple`).
+
+        Args:
+            expr_dict (dict): Parsed expression (can contain 'Op', 'LeftExpr', 'RightExpr'
+                keys, or a single condition).
+
+        Returns:
+            expr_query (str): SQL boolean expression, to be inlined directly in a WHERE clause.
+        """
         if isinstance(expr_dict, dict) and "Op" in expr_dict:
-            # build left expession
             left_expr = self.build_simple_expr(expr_dict["LeftExpr"])
-            # build right expression
             right_expr = self.build_simple_expr(expr_dict["RightExpr"])
-        
-            # check operation and convert to SQL format for tables
             op = expr_dict["Op"].value.upper()
-        
+
             expr_query = (
                 f"    ({left_expr})\n"
                 f"{op}\n"
@@ -220,26 +232,22 @@ class Converter(ABC):
             )
         else:
             expr_query = self.build_simple_condition(expr_dict.value)
-        
+
         return expr_query
 
     def build_simple_condition(self, cond_dict: dict) -> str:
-        # check condition type and build main query for condition accordingly
-        # aggregation / id_dot_id
-        cond_type = cond_dict["CondType"]
-        match cond_type:
-            case "aggregation":
-                pass
-            case "id_dot_id":
-                pass
-            case _:
-                pass
+        r"""Build a raw boolean condition for a simple WHERE (no join/subquery needed).
 
-        # column to compare in condition
+        Args:
+            cond_dict (dict): Parsed condition dictionary for a plain `table.column` reference.
+
+        Returns:
+            cond_query (str): SQL condition expression, e.g. `age > 18`.
+        """
+        # a simple WHERE only ever contains plain id_dot_id conditions on the
+        # parent table (see Visitor._is_where_simple) -> use the column directly
         comp_col = cond_dict["Column"].value
 
-        # check value condition type and build condition accordingly
-        # num / str / null
         ctype = cond_dict["CType"]
         match ctype:
             case "num":
@@ -251,17 +259,13 @@ class Converter(ABC):
             case _:
                 pass
 
-        # handle NOT operator
         not_op = "NOT " if cond_dict["NOT"] else ""
-
-        # build final condition query
         cond_query = f"{not_op}{cond(comp_col)}"
-        
 
         return cond_query
 
     def build_stat_expr(self, expr_dict: dict, ptable: str, ppk: str) -> str:
-        r"""Builds a SQL query for the static expression part of the RTGL query.
+        r"""Build a SQL query for the static expression part of the RTGL query.
 
         Args:
             expr_dict (dict): Dictionary representation of the expr part of the RTGL query.
@@ -271,20 +275,18 @@ class Converter(ABC):
         Returns:
             expr_query (str): SQL query string representing the expr part of the RTGL query.
         """
-        # create division markers for formatted output
         div_line1, div_line2 = get_div_lines("STAT_EXPR")
 
         # if expression is composite (AND/OR) -> recursively build left and right sub-expressions
         # otherwise -> build single condition expression
         if isinstance(expr_dict, dict) and "Op" in expr_dict:
-            # build left expession
             left_expr = self.build_stat_expr(expr_dict["LeftExpr"], ptable, ppk)
             left_expr = format_query(left_expr)
-            # build right expression
             right_expr = self.build_stat_expr(expr_dict["RightExpr"], ptable, ppk)
             right_expr = format_query(right_expr)
 
-            # check operation and convert to SQL format for tables
+            # each side yields an independently-computed set of matching foreign keys, so AND/OR
+            # combine them as set operations (INTERSECT/UNION) rather than inline boolean logic
             op = expr_dict["Op"].value.lower()
             if op == "and":
                 filt = "INTERSECT"
@@ -292,11 +294,11 @@ class Converter(ABC):
                 filt = "UNION"
             else:
                 pass
-            
+
             expr_query = (
                 f"{div_line1}\n"
                 "SELECT\n"
-                "    fk\n"          
+                "    fk\n"
                 "FROM\n"
                 f"    ({left_expr}) __LEFT_EXPR__\n"
                 f"{filt}\n"
@@ -311,7 +313,7 @@ class Converter(ABC):
         return expr_query
 
     def build_condition(self, cond_dict: dict, ptable: str, ppk: str, stat: bool = False) -> str:
-        r"""Builds a SQL query for a condition part of the RTGL query.
+        r"""Build a SQL query for a condition part of the RTGL query.
 
         Args:
             cond_dict (dict): Dictionary representation of the condition part of the RTGL query.
@@ -322,11 +324,8 @@ class Converter(ABC):
         Returns:
             cond_query (str): SQL query string representing the condition part of the RTGL query.
         """
-        # create division markers for formatted output
         div_line1, div_line2 = get_div_lines("CONDITION")
 
-        # check condition type and build main query for condition accordingly
-        # aggregation / id_dot_id
         cond_type = cond_dict["CondType"]
         match cond_type:
             case "aggregation":
@@ -340,11 +339,8 @@ class Converter(ABC):
                 pass
         main_query = format_query(main_query)
 
-        # column to compare in condition
         comp_col = "comp_col"
 
-        # check value condition type and build condition accordingly
-        # num / str / null
         ctype = cond_dict["CType"]
         match ctype:
             case "num":
@@ -356,17 +352,14 @@ class Converter(ABC):
             case _:
                 pass
 
-        # handle NOT operator
         not_op = "NOT " if cond_dict["NOT"] else ""
-
-        # build final condition query
         cond_query = (
             f"{div_line1}\n"
-            "SELECT\n"    
+            "SELECT\n"
             "    *\n"
-            "FROM\n"    
+            "FROM\n"
             f"    ({main_query})\n"
-            "WHERE\n"    
+            "WHERE\n"
             f"    {not_op}{cond(comp_col)}\n"
             f"{div_line2}"
         )
@@ -374,7 +367,7 @@ class Converter(ABC):
         return cond_query
 
     def build_stat_aggregation(self, aggr_dict: dict, ptable: str, ppk: str) -> str:
-        r"""Builds a SQL query for a static RTGL aggregation.
+        r"""Build a SQL query for a static RTGL aggregation.
 
         Args:
             aggr_dict (dict): Parsed aggregation dictionary containing 'Table', 'Column', 'Where'(optional) keys.
@@ -384,49 +377,55 @@ class Converter(ABC):
         Returns:
             aggr_query (str): SQL query returning pairs (fk, comp_col).
         """
-        # create division markers for formatted output
         div_line1, div_line2 = get_div_lines("STAT_AGGREGATION")
 
         # extract aggregation table
-        aggr_table = aggr_table_name = self.path_builder.find_orig_src_table(aggr_dict["Table"].value)
-        aggr_column = self._find_column(aggr_table, aggr_dict["Column"].value)
-        
+        aggr_table = self.path_builder.find_orig_src_table(aggr_dict["Table"].value)
+        aggr_column = self.db_explorer.find_column(aggr_table, aggr_dict["Column"].value)
+
         if aggr_table != ptable:
-            aggr_dict["Column"].value = f"__TABLE0__" + aggr_column
-            
+            aggr_dict["Column"].value = "__TABLE0__" + aggr_column
+
         if aggr_column == "*":
             aggr_dict["Column"].value = ppk
-        
+
         # build SQL aggregation function with proper column references
         aggr_func = build_aggr_func(aggr_dict)
         aggr = format_query(aggr_func("__JOINED_TABLES__"))
         aggr_dict["Column"].value = aggr_column
-        
+
         # build static WHERE query if exists
         if where := aggr_dict["Where"]:
-            aggr_ppk = self._find_pkey(aggr_table)
+            aggr_ppk = self.db_explorer.find_pkey(aggr_table)
             aggr_table = self.build_stat_where(where.value, aggr_table, aggr_ppk)
             aggr_table = f"({aggr_table}\n)"
 
         joined_tables = self.build_stat_join(aggr_dict["Table"].value, aggr_table, ptable)
 
-        # build aggregation query
+        # Anchor on the raw parent table (not on the aggregation-table join chain itself) with a
+        # LEFT JOIN, so an entity with zero matching rows still gets a group -- giving `aggr`'s own
+        # COALESCE (e.g. for COUNT/SUM) a chance to report 0 instead of the entity being silently
+        # excluded. This mirrors temporal aggregation's behavior, which is anchored on __FOR_EACH__.
         aggr_query = (
             f"{div_line1}\n"
             "SELECT\n"
-            f"    __JOINED_TABLES__.{ppk} AS fk,\n"
+            f"    __PARENT__.{ppk} AS fk,\n"
             f"    {aggr} AS comp_col\n"
             "FROM\n"
+            f"    {ptable} __PARENT__\n"
+            "LEFT JOIN\n"
             f"    {joined_tables} __JOINED_TABLES__\n"
+            "ON\n"
+            f"    __JOINED_TABLES__.{ppk} = __PARENT__.{ppk}\n"
             "GROUP BY\n"
-            f"    __JOINED_TABLES__.{ppk}\n"
+            f"    __PARENT__.{ppk}\n"
             f"{div_line2}"
         )
 
         return aggr_query
 
     def build_id_dot_id(self, some_dict: dict, ptable: str, ppk: str) -> str:
-        r"""Builds the SQL query for a table.column(id_dot_id) part of the RTGL query.
+        r"""Build the SQL query for a table.column(id_dot_id) part of the RTGL query.
 
         Args:
             some_dict (dict): Dictionary containing 'Table', 'Column' keys.
@@ -436,43 +435,41 @@ class Converter(ABC):
         Returns:
             id_dot_id_query (str): SQL query string representing the id_dot_id part of the RTGL query.
         """
-        # create division markers for formatted output
         div_line1, div_line2 = get_div_lines("ID_DOT_ID")
 
         table = self.path_builder.find_orig_src_table(some_dict["Table"].value)
-        column = self._find_column(table, some_dict["Column"].value)
+        column = self.db_explorer.find_column(table, some_dict["Column"].value)
 
         # column to compare in condition
         comp_col = "comp_col"
 
         joined_tables = self.build_stat_join(some_dict["Table"].value, table, ptable)
 
-        prefix = f"__TABLE0__" if table != ptable else ""
+        prefix = "__TABLE0__" if table != ptable else ""
         id_dot_id_query = (
             f"{div_line1}\n"
-            "SELECT\n"    
+            "SELECT\n"
             f"    *,\n"
-            f"    {ppk} AS fk,\n"    
+            f"    {ppk} AS fk,\n"
             f"    {prefix}{column} AS {comp_col}\n"
-            "FROM\n"    
+            "FROM\n"
             f"    {joined_tables}\n"
             f"{div_line2}"
         )
 
         return id_dot_id_query
-    
+
     def build_stat_join(self, src_table: str, src_table_query: str, dst_table: str) -> str:
-        r"""Builds SQL join between two table.
-        
+        r"""Build SQL join between two table.
+
         Args:
             src_table (str): Source table.
             src_table_query (str): Source table representation (e.g., after filtering).
             dst_table (str): Destination table.
-        
+
         Returns:
             join_query (str): SQL query with joined tables.
         """
-        # create division markers for formatted output
         div_line1, div_line2 = get_div_lines("TABLES_JOIN")
 
         src_table, path = self.path_builder.find_shortest_path(src_table, dst_table)
@@ -491,23 +488,23 @@ class Converter(ABC):
         for i, (fk, table, edge_type) in enumerate(path):
             left_table = prev_table
             right_table = table
-        
+
             if edge_type == "f":
                 # fk on the source table
                 left_col = f"__TABLE{i}__{fk}"
-                right_col = self._find_pkey(right_table)
+                right_col = self.db_explorer.find_pkey(right_table)
             else:
                 # fk on the destination table
-                left_pk = self._find_pkey(left_table)
+                left_pk = self.db_explorer.find_pkey(left_table)
                 left_col = f"__TABLE{i}__{left_pk}"
                 right_col = fk
-        
+
             if i != len(path) - 1:
                 right_table = add_prefix(right_table, f"__TABLE{i+1}__")
                 right_col = f"__TABLE{i+1}__{right_col}"
-        
+
             prev_table = table
-           
+
             cur_table = (
                 f"{cur_table}"
                 f"JOIN\n"
@@ -526,173 +523,23 @@ class Converter(ABC):
 
     ################## Helper methods ##################
 
-    def _normalize_table(self, table_obj: Table) -> Table:
-        r"""Normalizes a *`Table`* object by converting all column names to lowercase.
-
-        Args:
-            table_obj (Table): *`Table`* object to be normalized.
-        
-        Returns:
-            out (Table): Normalized *`Table`* object with lowercase column names.
-        """
-        return Table(
-            df=table_obj.df.head(0).rename(columns=str.lower) if table_obj.df is not None else None,
-            fkey_col_to_pkey_table={fkey.lower(): ptable for fkey, ptable in table_obj.fkey_col_to_pkey_table.items()},
-            pkey_col=table_obj.pkey_col.lower() if table_obj.pkey_col else None,
-            time_col=table_obj.time_col.lower() if table_obj.time_col else None,
-        )
-
-    def _normalize_db(self) -> Database:
-        r"""Normalizes a *`Database`* instance by converting all table and column names to lowercase.
-        
-        Returns:
-            out (Database): Normalized *`Database`* instance with lowercase table and column names.
-        """
-        return Database(
-            table_dict={name.lower(): self._normalize_table(table) 
-                for name, table in self.db.table_dict.items()} if self.db.table_dict else {}
-        )
-
     def _clear_metadata(self) -> None:
-        r"""Clears the metadata of the converter, including the error collector, CTEs, and CTE dictionary.
-        
+        r"""Clear the metadata of the converter, including the error collector, CTEs, and CTE dictionary.
+
         Returns:
             out (None):
         """
         self.collector.clear()
-        self.ctes = "" 
+        self.ctes = ""
         self.cte_dict = {}
 
     def _register_db(self) -> None:
-        """Registers all tables from the *`Database`* instance in the *`DuckDB`* connection.
+        r"""Register all tables from the *`Database`* instance in the *`DuckDB`* connection.
 
         Returns:
             out (None):
         """
-        if self.conn:
-            return
-
         self.conn = duckdb.connect()
 
         for name, table in self.db.table_dict.items():
             self.conn.register(name, table.df)
-
-    def _find_table(self, table: str) -> tuple[str, Table, dict[str, str] | None] | None:
-        r"""Finds a *`Table`* object in the *`Database`* by its name (case-insensitive).
-
-        Args:
-            table (str): Name of the table to find.
-
-        Returns:
-            out (tuple[str, Table] | None): Tuple of the form (original_table_name, Table)
-                Returns None if no table with the given name was found.
-        """
-        table_lower = table.lower()
-
-        if cte_inf := self.cte_dict.get(table_lower):
-            return table_lower, *cte_inf
-        
-        if table_obj := self.norm_db.table_dict.get(table_lower):
-            return table_lower, table_obj, None
-
-        return None
-
-    def _find_column(self, table: str, column: str) -> str | None:
-        r"""Finds a column name in a table (case-insensitive).
-
-        Args:
-            table (str): Name of the table.
-            column (str): Name of the column to find.
-
-        Returns:
-            out (str | None): Original name of the column if found, None otherwise.
-        """
-        _, table_obj, _ = self._find_table(table)
-
-        if table_obj:
-            # if column is "*" -> return primary key column
-            if column == "*":
-                return table_obj.pkey_col if table_obj.pkey_col else "*"
-        
-            return column.lower()
-                
-        return None
-
-    def _find_ptable(self, table: str, fk: str) -> str | None:
-        r"""Finds the parent table name that a given table references through a given foreign key (case-insensitive).
-
-        Args:
-            table (str): Name of the child table.
-            fk (str): Name of the foreign key column in the child table.
-
-        Returns:
-            out (str | None): Name of the parent table that the child table references through the foreign key column
-                if found, None otherwise.
-        """
-        table_lower, fk_lower = table.lower(), fk.lower()
-
-        for cte_name, (_, fkey_table_col) in self.cte_dict.items():
-            if (fk_col := fkey_table_col.get(table_lower)) and (fk_col == fk_lower):
-                return cte_name
-
-        _, table_obj, _ = self._find_table(table)
-        
-        return table_obj.fkey_col_to_pkey_table.get(fk_lower) if table_obj else None
-
-    def _find_fk(self, ctable: str, ptable: str, ppk: str) -> str | None:
-        r"""Finds the foreign key column in a child table that references the parent table (case-insensitive).
-
-        Args:
-            ctable (str): Name of the child table.
-            ptable (str): Name of the parent table.
-            ppk (str): Name of the primary key column in the parent table.
-
-        Returns:
-            out (str | None): Name of the foreign key column in the child table if found, None otherwise.
-        """
-        ctable_lower, ptable_lower = ctable.lower(), ptable.lower()
-
-        # if child and parent table are the same -> return primary key
-        if ctable_lower == ptable_lower:
-            return ppk
-
-        _, ctable_obj, _ = self._find_table(ctable)
-
-        if cte_inf := self.cte_dict.get(ptable_lower):
-            return cte_inf[1].get(ctable_lower)
-        
-        # fk ... name of foreign key column in child table
-        # parent_table ... name of referenced parent table
-        for fk, parent_table in ctable_obj.fkey_col_to_pkey_table.items():
-            if parent_table == ptable_lower:
-                return fk
-        
-        return None
-
-    def _find_pkey(self, table: str) -> str | None:
-        r"""Finds the primary key column of a table (case-insensitive).
-
-        Args:
-            table (str): Name of the table.
-
-        Returns:
-            out (str | None): Name of the primary key column of the table if found, None otherwise.
-        """
-        _, table_obj, _ = self._find_table(table)
-        return table_obj.pkey_col
-    
-    def _find_orig_name(self, table: str) -> str | None:
-        r"""Finds the original name of a table (case-insensitive).
-
-        Args:
-            table (str): Name of the table.
-
-        Returns:
-            out (str | None): Original name of the table if found, None otherwise.
-        """
-        for orig_name in self.db.table_dict.keys():
-            if orig_name.lower() == table.lower():
-                return orig_name
-        
-        return table
-    

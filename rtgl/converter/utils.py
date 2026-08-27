@@ -4,14 +4,14 @@ from collections.abc import Callable
 
 
 def build_num_condition(cond_dict: dict) -> Callable[[str], str]:
-    r"""Builds SQL numeric comparison condition from parsed dictionary.
+    """Build SQL numeric comparison condition from parsed dictionary.
 
     Args:
         cond_dict (dict): Dictionary containing 'N' (numeric value) and
             'CompOp' (comparison operator like '>', '<=', '==').
 
     Returns:
-        function: Lambda that takes a column name and returns SQL condition string.
+        out (Callable[[str], str]): Lambda that takes a column name and returns a SQL condition string.
     """
     tmp = cond_dict["N"].value
     n = float(tmp) if "." in tmp else int(tmp)
@@ -22,14 +22,14 @@ def build_num_condition(cond_dict: dict) -> Callable[[str], str]:
 
 
 def build_str_condition(cond_dict: dict) -> Callable[[str], str]:
-    """Builds SQL string comparison condition from parsed dictionary.
+    """Build SQL string comparison condition from parsed dictionary.
 
     Args:
         cond_dict (dict): Dictionary containing 'String' (string value) and
             'CompOp' (comparison operator like 'contains', 'starts with').
 
     Returns:
-        function: Lambda that takes a column name and returns SQL condition string.
+        out (Callable[[str], str]): Lambda that takes a column name and returns a SQL condition string.
     """
     s = cond_dict["String"].value.strip("'\"")
     comp_op = cond_dict["CompOp"].value.lower()
@@ -54,13 +54,13 @@ def build_str_condition(cond_dict: dict) -> Callable[[str], str]:
 
 
 def build_null_condition(cond_dict: dict) -> Callable[[str], str]:
-    """Builds SQL NULL check condition from parsed dictionary.
+    """Build SQL NULL check condition from parsed dictionary.
 
     Args:
         cond_dict (dict): Dictionary containing 'CheckOp' (NULL, IS_NULL).
 
     Returns:
-        function: Lambda that takes a column name and returns SQL condition string.
+        out (Callable[[str], str]): Lambda that takes a column name and returns a SQL condition string.
     """
     check_op = cond_dict["CheckOp"].value.upper()
 
@@ -68,16 +68,16 @@ def build_null_condition(cond_dict: dict) -> Callable[[str], str]:
 
 
 def build_aggr_func(aggr_dict: dict, time_column: str = None) -> Callable[[str], str]:
-    """Builds SQL aggregation function from parsed dictionary.
+    """Build SQL aggregation function from parsed dictionary.
 
     Args:
         aggr_dict (dict): Dictionary containing 'AggrType' (aggregation type) and 'Column' (column to aggregate).
         time_column (str, optional): Time column name for temporal aggregations.
 
     Returns:
-        function: Lambda that takes a table name and returns SQL aggregation expression.
+        out (Callable[[str], str]): Lambda that takes a table name and returns a SQL aggregation expression.
     """
-    aggr_type = aggr_dict["AggrType"].value.lower()    
+    aggr_type = aggr_dict["AggrType"].value.lower()
     aggr_column = aggr_dict["Column"].value
 
     match aggr_type:
@@ -99,32 +99,30 @@ def build_aggr_func(aggr_dict: dict, time_column: str = None) -> Callable[[str],
             return lambda table: f"MIN({table}.{aggr_column})"
         case "sum":
             return lambda table: f"COALESCE(SUM({table}.{aggr_column}), 0)"
-        # case "length":
-        #     return lambda table: f"LENGTH({table}.{aggr_column})"
         case _:
             pass
 
 
 def build_cte(name: str, body: str) -> str:
-    """Builds a Common Table Expression (CTE) SQL string.
+    """Build a Common Table Expression (CTE) SQL string.
 
     Args:
         name (str): Name of the CTE.
         body (str): SQL query body of the CTE.
-    
+
     Returns:
         out (str): Formatted CTE SQL string.
     """
     return f"{name} AS (\n{body})"
 
-    
+
 def add_prefix(table_query: str, prefix: str) -> str:
-    """Adds a prefix to all column names in a table.
+    """Add a prefix to all column names in a table.
 
     Args:
         table_query (str): SQL query representing the table.
         prefix (str): Prefix to add to each column name.
-    
+
     Returns:
         out (str): SQL query with prefixed column names.
     """
@@ -132,11 +130,11 @@ def add_prefix(table_query: str, prefix: str) -> str:
 
 
 def format_query(query: str) -> str:
-    """Formats a SQL query string for better readability.
+    """Format a SQL query string for better readability.
 
     Args:
         query (str): SQL query string to format.
-    
+
     Returns:
         out (str): Formatted SQL query string with indentation.
     """
@@ -144,9 +142,9 @@ def format_query(query: str) -> str:
 
 
 def get_div_lines(message: str) -> tuple[str, str]:
-    """Generates division lines with a messages for SQL formatting.
+    """Generate division lines with a messages for SQL formatting.
 
-    Creates SQL comment lines with a message.
+    Create SQL comment lines with a message.
 
     Args:
         message (str): Message to include in the division line.
@@ -154,5 +152,5 @@ def get_div_lines(message: str) -> tuple[str, str]:
     Returns:
         out (tuple[str, str]): Tuple containing the starting and ending division lines.
     """
-    return f"{'--' * 3}{message}_START{'--' * 3}", f"{'--' * 3}{message}_END{'--' * 3}" 
+    return f"{'--' * 3}{message}_START{'--' * 3}", f"{'--' * 3}{message}_END{'--' * 3}"
 

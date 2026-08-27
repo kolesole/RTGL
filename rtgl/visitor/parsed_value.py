@@ -4,12 +4,12 @@
 class ParsedValue:
     r"""Wrapper for parsed values that preserves their source location.
 
-    Used by the visitor to attach line and column information to values
+    Used by the *`Visitor`* to attach line and column information to values
     extracted from the parse tree.
     """
 
     def __init__(self, value: dict | str, line: int, column: int) -> None:
-        r"""Initializes a *`ParsedValue`* object with a value and its location.
+        r"""Initialize a *`ParsedValue`* object with a value and its location.
 
         Args:
             value (str): The parsed value from the query.
@@ -24,9 +24,9 @@ class ParsedValue:
         self.column = column
 
     def __repr__(self) -> str:
-        r"""Returns a string representation showing value and location.
+        r"""Return a string representation showing value and location.
 
         Returns:
             out (str): Formatted string with value and its position in source.
         """
-        return f"{self.value} at line {self.line}:{self.column})"
+        return f"({self.value} at line {self.line}:{self.column})"

@@ -53,6 +53,15 @@ class ParserRTGLListener(ParseTreeListener):
         pass
 
 
+    # Enter a parse tree produced by ParserRTGL#path_node.
+    def enterPath_node(self, ctx:ParserRTGL.Path_nodeContext):
+        pass
+
+    # Exit a parse tree produced by ParserRTGL#path_node.
+    def exitPath_node(self, ctx:ParserRTGL.Path_nodeContext):
+        pass
+
+
     # Enter a parse tree produced by ParserRTGL#for_each_tmp.
     def enterFor_each_tmp(self, ctx:ParserRTGL.For_each_tmpContext):
         pass
@@ -260,6 +269,15 @@ class ParserRTGLListener(ParseTreeListener):
         pass
 
 
+    # Enter a parse tree produced by ParserRTGL#fkey_table_to_fkey_col.
+    def enterFkey_table_to_fkey_col(self, ctx:ParserRTGL.Fkey_table_to_fkey_colContext):
+        pass
+
+    # Exit a parse tree produced by ParserRTGL#fkey_table_to_fkey_col.
+    def exitFkey_table_to_fkey_col(self, ctx:ParserRTGL.Fkey_table_to_fkey_colContext):
+        pass
+
+
     # Enter a parse tree produced by ParserRTGL#table_tmp.
     def enterTable_tmp(self, ctx:ParserRTGL.Table_tmpContext):
         pass
@@ -284,15 +302,6 @@ class ParserRTGLListener(ParseTreeListener):
 
     # Exit a parse tree produced by ParserRTGL#column.
     def exitColumn(self, ctx:ParserRTGL.ColumnContext):
-        pass
-
-
-    # Enter a parse tree produced by ParserRTGL#id_dot_id.
-    def enterId_dot_id(self, ctx:ParserRTGL.Id_dot_idContext):
-        pass
-
-    # Exit a parse tree produced by ParserRTGL#id_dot_id.
-    def exitId_dot_id(self, ctx:ParserRTGL.Id_dot_idContext):
         pass
 
 

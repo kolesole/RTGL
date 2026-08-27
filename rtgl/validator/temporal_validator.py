@@ -1,7 +1,6 @@
 """Temporal query validator class for RTGL."""
 
-from rtgl.base import Database
-from rtgl.converter.path_builder import PathBuilder
+from rtgl.base import DatabaseExplorer, PathBuilder
 from rtgl.validator.diagnostics import IssueCollector
 from rtgl.validator.validator import AggrContext, IdDotIdContext, Validator
 from rtgl.visitor import ParsedValue
@@ -14,22 +13,24 @@ class TValidator(Validator):
     In addition, implements validation logic for ASSUMING clause.
     """
 
-    def __init__(self, collector: IssueCollector, db: Database) -> None:
-        """Initializes the Temporal Validator with an error collector and database.
+    def __init__(self, collector: IssueCollector, db_explorer: DatabaseExplorer, path_builder: PathBuilder) -> None:
+        r"""Initialize the temporal validator with an error collector, database explorer, and path builder.
 
         Args:
-            collector (ErrorCollector): *`ErrorCollector`* to accumulate validation errors.
-            db (Database): *`Database`* instance containing schema information.
+            collector (IssueCollector): *`IssueCollector`* to accumulate validation errors.
+            db_explorer (DatabaseExplorer): *`DatabaseExplorer`* used to resolve table/column
+                names and look up CTE/SQL-injection relations.
+            path_builder (PathBuilder): *`PathBuilder`* used to resolve joins and CPEs.
 
         Returns:
             out (None):
         """
-        super().__init__(collector, db)
+        super().__init__(collector, db_explorer, path_builder)
 
-    def validate(self, query_dict: dict, cte_dict: dict, path_builder: PathBuilder) -> None:
-        r"""Validates a parsed query dictionary.
+    def validate(self, query_dict: dict) -> None:
+        r"""Validate a parsed query dictionary.
 
-        Ensures the query is temporal (not static) and delegates to validate_query.
+        Ensure the query is temporal (not static) and delegate to validate_query.
 
         Args:
             query_dict (dict): Parsed query dictionary from the visitor.
@@ -37,8 +38,9 @@ class TValidator(Validator):
         Returns:
             out (None):
         """
-        self.cte_dict = cte_dict
-        self.path_builder = path_builder
+        # validate declared CPEs and SQL injections regardless of whether they end up used
+        self.validate_predefined_paths(query_dict["PredefinedPaths"])
+        self.validate_injections(query_dict["Injections"])
 
         # check if the query is temporal
         if query := query_dict["QueryTmp"]:
@@ -50,11 +52,8 @@ class TValidator(Validator):
                 msg="For temporal converter, only temporal queries are supported, found static query"
             )
 
-        self.cte_dict = {}
-        self.path_builder = None
-
     def validate_query(self, query: ParsedValue) -> None:
-        r"""Validates all components of a temporal query.
+        r"""Validate all components of a temporal query.
 
         Args:
             query (ParsedValue): Parsed temporal query to validate.
@@ -77,10 +76,10 @@ class TValidator(Validator):
     def validate_aggregation(self, aggr: ParsedValue, ptable_name: str, context: AggrContext) -> None:
         r"""Validate a temporal aggregation with time window constraints.
 
-        Checks that:
+        Check that:
         - Start < End
-        - Time ranges are non-positive in PREDICT or WHERE (looking backward)
-        - Time ranges are non-negative in ASSUMING (looking forward)
+        - Time ranges are non-negative in PREDICT or ASSUMING (looking forward)
+        - Time ranges are non-positive in WHERE (looking backward)
 
         Args:
             aggr (ParsedValue): Parsed aggregation to validate.
@@ -100,14 +99,18 @@ class TValidator(Validator):
 
         # validate table.column in the aggregation
         self.validate_id_dot_id(table_token, column_token, ptable_name, IdDotIdContext.FROM_TMP_AGGR)
-        
+
         # validate WHERE clause inside the aggregation if present
         if where := aggr_dict["Where"]:
-            if not self._get_pkey_col(table_token.value):
+            if not self.db_explorer.find_pkey(table_token.value) and not where.value["IsSimple"]:
                 self.collector.add_error(
                     line=table_token.line,
                     column=table_token.column,
-                    msg=f"Table '{table_token.value}' in temporal aggregation does not have a primary key column, which is required for WHERE filtering"
+                    msg=(
+                        f"Table '{table_token.value}' in temporal aggregation does not have a primary key column, "
+                        "which is required for non-simple WHERE filtering (when the WHERE clause references "
+                        "tables other than the aggregation's own table)"
+                    )
                 )
             self.validate_where(where, table_token.value, stat=True)
 
@@ -150,71 +153,10 @@ class TValidator(Validator):
                 )
             )
 
-    def validate_id_dot_id(
-        self, table_token: ParsedValue, column_token: ParsedValue, ptable_name: str, context: IdDotIdContext
-    ) -> None:
-        """Validates a table.column reference in a temporal query.
-
-        In addition to static checks, ensures temporal aggregation tables
-        have a time column defined(only for references from aggregations).
-
-        Args:
-            table_token (ParsedValue): Parsed table name.
-            column_token (ParsedValue): Parsed column name.
-            ptable_name (str): Name of the parent table.
-            context (str): Context where this reference appears.
-
-        Returns:
-            out (None):
-        """
-        table_name = table_token.value
-
-        # check table existence
-        if not self._is_table_in_db(table_name):
-            self.collector.add_error(
-                line=table_token.line,
-                column=table_token.column,
-                msg=f"Table '{table_name}' in {context} does not exist"
-            )
-
-        # check table relationship with parent
-        if not self._has_conn_with_main_table(table_name, ptable_name):
-            self.collector.add_error(
-                line=table_token.line,
-                column=table_token.column,
-                msg=f"Table '{table_name}' in {context} is not connected (path does not exist) to main table '{ptable_name}'"
-            )
-
-        # temporal aggregations require a time column
-        # if context == IdDotIdContext.FROM_TMP_AGGR and not self._has_time_col(table_name):
-        #     self.collector.add_error(
-        #         line=table_token.line,
-        #         column=table_token.column,
-        #         msg=f"Table '{table_name}' in {context} does not have a time column"
-        #     )
-
-        column_name = column_token.value
-
-        # check column existence
-        if not self._is_column_in_table(table_name, column_name):
-            self.collector.add_error(
-                line=column_token.line,
-                column=column_token.column,
-                msg=f"Column '{column_name}' in {context} does not exist in table '{table_name}'"
-            )
-
-        # FOR EACH requires a primary key column
-        if context == IdDotIdContext.FROM_FOR_EACH and not self._is_pkey_col(table_name, column_name):
-            self.collector.add_error(
-                line=column_token.line,
-                column=column_token.column,
-                msg=f"Column '{column_name}' in {context} is not a primary key column of table '{table_name}'"
-            )
-
     def validate_assuming(self, assuming: ParsedValue, ptable_name: str) -> None:
         r"""Validate ASSUMING clause.
 
-        Just passes the context to `validate_expr` function.
+        Delegates to `validate_expr` with `AggrContext.FROM_ASSUMING`.
 
         Args:
             assuming (ParsedValue): Parsed ASSUMING clause.
