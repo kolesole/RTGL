@@ -223,5 +223,6 @@ experiments/model_training/
 experiments/task_generation/.tmp/
 experiments/task_generation/relational_fel_exp.ipynb
 tasks/
-*tmp*
+**/.tmp/
 .idea
+experiments/tmp
