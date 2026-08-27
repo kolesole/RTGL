@@ -3,7 +3,7 @@
 from abc import ABC, abstractmethod
 from enum import Enum, StrEnum, auto
 
-from rtgl.base import DatabaseExplorer, Database, Table
+from rtgl.base import DatabaseExplorer
 from rtgl.base.path_builder import Path, PathBuilder
 from rtgl.validator.diagnostics import IssueCollector
 from rtgl.visitor import ParsedValue
@@ -113,7 +113,10 @@ class Validator(ABC):
         table_name = table_token.value
 
         # check table existence
-        if not (orig_name := self.path_builder.find_orig_src_table(table_name)) and not self.db_explorer.find_table(table_name):
+        if (
+            not (orig_name := self.path_builder.find_orig_src_table(table_name))
+            and not self.db_explorer.find_table(table_name)
+        ):
             self.collector.add_error(
                 line=table_token.line,
                 column=table_token.column,
@@ -538,7 +541,7 @@ class Validator(ABC):
             if right_key and right_key not in keys[i+1]:
                 keys[i+1].append(right_key)
 
-        labels = [f"{table}.{':'.join(fks)}" if fks else table for table, fks in zip(tables, keys)]
+        labels = [f"{table}.{':'.join(fks)}" if fks else table for table, fks in zip(tables, keys, strict=False)]
 
         return " -> ".join(labels)
 

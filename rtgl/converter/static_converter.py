@@ -65,7 +65,9 @@ class SConverter(Converter):
                 # type where the label is just a plain scalar with no fkey semantics of its own.
                 filt = f"{filt} AND label != [NULL]"
                 select_clause = "fk, list_filter(label, x -> x IS NOT NULL) AS label"
-                _, table, table_obj, _ = self.db_explorer.find_table(self.path_builder.find_orig_src_table(aggr_dict["Table"].value))
+                _, table, table_obj, _ = self.db_explorer.find_table(
+                    table=self.path_builder.find_orig_src_table(aggr_dict["Table"].value)
+                )
                 column = self.db_explorer.find_column(table, aggr_dict["Column"].value)
 
                 label_fk = table if table_obj.pkey_col == column else table_obj.fkey_col_to_pkey_table.get(column)
@@ -95,7 +97,7 @@ class SConverter(Converter):
             ptable_orig = self.db_explorer.find_orig_name(ptable_orig) if ptable_orig else None
         else:
             ptable_orig = self.db_explorer.find_orig_name(ptable)
-            
+
         # execute SQL query and return result as Table
         start_time = time.time()
         df = self.conn.sql(sql_query).df()

@@ -3,7 +3,6 @@
 from collections import deque
 
 from rtgl.base.database_explorer import DatabaseExplorer
-from rtgl.base.database import Database
 
 # foreign key, table name, edge type ("f" ... forward, "r" ... reversed)
 type Path = list[tuple[str, str, str]]
@@ -118,11 +117,7 @@ class PathBuilder:
         # since its time column is handled by the caller separately)
         path = [(None, src_table, None)] + path[:-1]
 
-        for _, table, _ in path:
-            if self.db_explorer.find_time_column(table):
-                return True
-
-        return False
+        return any(self.db_explorer.find_time_column(table) for _, table, _ in path)
 
     def build_paths(self, src_table: str, dst_table: str, only_temporal: bool=False) -> list[Path]:
         r"""Find the shortest path(s) between two tables via breadth-first search.

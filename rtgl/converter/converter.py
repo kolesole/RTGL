@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 import duckdb
 from antlr4 import CommonTokenStream, InputStream
 
-from rtgl.base import DatabaseExplorer, Database, Table
+from rtgl.base import Database, DatabaseExplorer, Table
 from rtgl.base.path_builder import PathBuilder
 from rtgl.converter.utils import (
     add_prefix,

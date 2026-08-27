@@ -115,10 +115,10 @@ class Visitor(ParserRTGLVisitor):
     @override
     def visitCommon_path_exprs(self, ctx:ParserRTGL.Common_path_exprsContext) -> None:
         r"""Visit the `WITH ... AS (...)` clause and visit each declared CPE in turn.
-        
+
         Args:
             ctx (ParserRTGL.Common_path_exprsContext): Parse tree context.
-        
+
         Returns:
             out (None): The CPEs are stored in `self.predefined_paths`.
         """
@@ -131,7 +131,7 @@ class Visitor(ParserRTGLVisitor):
 
         Args:
             ctx (ParserRTGL.Common_path_exprContext): Parse tree context.
-        
+
         Returns:
             out (None): The CPE is stored in `self.predefined_paths`.
         """
@@ -685,9 +685,12 @@ class Visitor(ParserRTGLVisitor):
         return table, left_key, right_key
 
     @override
-    def visitFkey_col_to_pkey_table(self, ctx:ParserRTGL.Fkey_col_to_pkey_tableContext) -> tuple[ParsedValue, ParsedValue]:
+    def visitFkey_col_to_pkey_table(
+            self,
+            ctx:ParserRTGL.Fkey_col_to_pkey_tableContext
+        ) -> tuple[ParsedValue, ParsedValue]:
         r"""Visit a single `fkey_col->pkey_table` entry of a SQL injection's key declarations.
-        
+
         Args:
             ctx (ParserRTGL.Fkey_col_to_pkey_tableContext): Parse tree context.
 
@@ -697,7 +700,10 @@ class Visitor(ParserRTGLVisitor):
         return self._node2value(ctx.fkey_col), self._node2value(ctx.pkey_table)
 
     @override
-    def visitFkey_table_to_fkey_col(self, ctx:ParserRTGL.Fkey_table_to_fkey_colContext) -> tuple[ParsedValue, ParsedValue]:
+    def visitFkey_table_to_fkey_col(
+            self,
+            ctx:ParserRTGL.Fkey_table_to_fkey_colContext
+        ) -> tuple[ParsedValue, ParsedValue]:
         r"""Visit a single `other_table.fkey_col` entry of a SQL injection's key declarations.
 
         Args:
@@ -746,7 +752,12 @@ class Visitor(ParserRTGLVisitor):
 
     ################## Helper methods ##################
 
-    def _node2value(self, node: TerminalNode | None, unwrap: bool=False, preserve_case: bool=False) -> ParsedValue | str | None:
+    def _node2value(
+            self,
+            node: TerminalNode | None,
+            unwrap: bool=False,
+            preserve_case: bool=False
+        ) -> ParsedValue | str | None:
         r"""Convert a terminal node (token) to *`ParsedValue`*.
 
         Extract the text and position information from an ANTLR terminal node.
@@ -758,14 +769,18 @@ class Visitor(ParserRTGLVisitor):
             preserve_case (bool): If True, preserve the original case of the token text.
 
         Returns:
-            out (ParsedValue | str | None): Wrapped value with location, or the raw string if unwrap=True, 
+            out (ParsedValue | str | None): Wrapped value with location, or the raw string if unwrap=True,
                 or None if node is None.
         """
         if not node:
             return None
 
         token = node.getSymbol() if hasattr(node, "getSymbol") else node
-        parsed_value = ParsedValue(token.text if preserve_case else token.text.lower(), line=token.line, column=token.column)
+        parsed_value = ParsedValue(
+            value=token.text if preserve_case else token.text.lower(),
+            line=token.line,
+            column=token.column
+        )
 
         return parsed_value.value if unwrap else parsed_value
 
@@ -780,7 +795,7 @@ class Visitor(ParserRTGLVisitor):
                 wrapper. Default = False.
 
         Returns:
-            out (ParsedValue | None): Wrapped visit result with location, or the raw value if unwrap=True, 
+            out (ParsedValue | None): Wrapped visit result with location, or the raw value if unwrap=True,
                 or None if ctx is None.
         """
         if not ctx:

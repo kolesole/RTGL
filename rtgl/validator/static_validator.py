@@ -1,6 +1,6 @@
 """Static query validator class for RTGL."""
 
-from rtgl.base import DatabaseExplorer, Database
+from rtgl.base import DatabaseExplorer
 from rtgl.base.path_builder import PathBuilder
 from rtgl.validator.diagnostics import IssueCollector
 from rtgl.validator.validator import AggrContext, Validator

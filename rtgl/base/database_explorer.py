@@ -27,10 +27,10 @@ class DatabaseExplorer:
 
     def normalize_table(self, table_obj: Table) -> Table:
         r"""Normalize a *`Table`* object by converting all column names to lowercase.
-    
+
         Args:
             table_obj (Table): *`Table`* object to be normalized.
-    
+
         Returns:
             out (Table): Normalized *`Table`* object with lowercase column names.
         """
@@ -42,10 +42,10 @@ class DatabaseExplorer:
             pkey_col=table_obj.pkey_col.lower() if table_obj.pkey_col else None,
             time_col=table_obj.time_col.lower() if table_obj.time_col else None,
         )
-    
+
     def normalize_db(self) -> Database:
         r"""Normalize a *`Database`* instance by converting all table and column names to lowercase.
-    
+
         Returns:
             out (Database): Normalized *`Database`* instance with lowercase table and column names.
         """
@@ -136,7 +136,7 @@ class DatabaseExplorer:
         """
         if not (table_inf := self.find_table(table)):
             return None
-        
+
         _, _, table_obj, _ = table_inf
         return table_obj.pkey_col
 
@@ -150,11 +150,11 @@ class DatabaseExplorer:
             out (str | None): Original name of the table if found, None otherwise.
         """
         table = table.lower()
-            
+
         for orig_name in self.db.table_dict:
             if orig_name.lower() == table:
                 return orig_name
-            
+
         return None
 
     def find_time_column(self, table: str) -> str | None:
@@ -169,7 +169,7 @@ class DatabaseExplorer:
         """
         if not (table_inf := self.find_table(table)):
             return None
-        
+
         _, _, table_obj, _ = table_inf
 
         return table_obj.time_col

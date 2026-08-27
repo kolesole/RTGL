@@ -209,7 +209,7 @@ class IssueCollector(ErrorListener):
                 f"\n{Colors.RED}{Colors.BOLD}{Colors.UNDERLINE}Validation failed with {num_errors} {type} error(s)"
                 f"{Colors.DEFAULT}:\n{error_messages}"
             )
-        
+
         self.clear()
 
     def clear(self) -> None:
