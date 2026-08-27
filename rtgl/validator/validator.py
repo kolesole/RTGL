@@ -442,7 +442,7 @@ class Validator(ABC):
                 aggr_dict = aggr.value
                 aggr_type = aggr_dict["AggrType"].value.lower()
 
-                # Validate that the aggregation type is compatible with the condition type
+                # validate that the aggregation type is compatible with the condition type
                 match cond_dict["CType"]:
                     case "num":
                         if aggr_type not in AGGR_NUM_COND:

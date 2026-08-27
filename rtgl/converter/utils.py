@@ -1,4 +1,4 @@
-"""Utility functions for building SQL conditions and aggregations."""
+"""Utility functions for building SQL queries."""
 
 from collections.abc import Callable
 

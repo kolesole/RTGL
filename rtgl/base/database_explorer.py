@@ -61,7 +61,8 @@ class DatabaseExplorer:
             table (str): Name of the table to find.
 
         Returns:
-            out (tuple[str, Table] | None): Tuple of the form (original_table_name, Table)
+            out (tuple[str, str, Table, dict] | None): Tuple of the form
+                (table place, original_table_name, Table, additional_info)
                 Returns None if no table with the given name was found.
         """
         table = table.lower()

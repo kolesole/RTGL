@@ -57,7 +57,7 @@ class SConverter(Converter):
             aggr_dict = aggr.value
             if aggr_dict["AggrType"].value.lower() == "list_distinct":
                 # LIST_DISTINCT produces an array label, so a null child value survives inside the
-                # array instead of making the whole row NULL -- filter it out of the array directly,
+                # array instead of making the whole row NULL - filter it out of the array directly,
                 # and treat a label of exactly [NULL] (no real values matched) as equivalent to a
                 # NULL scalar label. label_fk also needs special resolution here: the array elements
                 # come from the aggregated column itself, which may be the aggregation table's own

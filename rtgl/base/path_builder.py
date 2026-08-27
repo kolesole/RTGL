@@ -39,7 +39,7 @@ class PathBuilder:
         self.relations = self._build_relations()
         self.predefined_paths = self._normalize_predefined_paths(predefined_paths)
 
-    def find_shortest_path(self, src_table: str, dst_table: str) -> tuple[Path | None, str]:
+    def find_shortest_path(self, src_table: str, dst_table: str) -> tuple[str, Path | None]:
         r"""Find the join path from a source table to a destination table.
 
         If `src_table` is a CPE alias, resolves it to its declared path and origin table
@@ -50,7 +50,7 @@ class PathBuilder:
             dst_table (str): Name of the destination table to reach.
 
         Returns:
-            out (tuple[Path | None, str]): Tuple of (actual source table name, join path).
+            out (tuple[str, Path | None,]): Tuple of (actual source table name, join path).
                 The path is empty if `src_table` and `dst_table` are the same table.
         """
         src_table, dst_table = src_table.lower(), dst_table.lower()

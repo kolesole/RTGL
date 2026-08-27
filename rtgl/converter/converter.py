@@ -123,8 +123,8 @@ class Converter(ABC):
     def parse_query(self, rtgl_query: str) -> dict:
         r"""Parse the RTGL query string into a dictionary representation.
 
-        Parse a query, build CTEs, and validate the resulting dictionary representation; print all errors
-        on stderr and exit the program if any errors were found.
+        Parse a query, build CTEs, and validate the resulting dictionary representation; print all warnings,
+        raise all errors and exit the program if any errors were found.
 
         Args:
             rtgl_query (str): The RTGL query string to be parsed.
@@ -403,7 +403,7 @@ class Converter(ABC):
         joined_tables = self.build_stat_join(aggr_dict["Table"].value, aggr_table, ptable)
 
         # Anchor on the raw parent table (not on the aggregation-table join chain itself) with a
-        # LEFT JOIN, so an entity with zero matching rows still gets a group -- giving `aggr`'s own
+        # LEFT JOIN, so an entity with zero matching rows still gets a group - giving `aggr`'s own
         # COALESCE (e.g. for COUNT/SUM) a chance to report 0 instead of the entity being silently
         # excluded. This mirrors temporal aggregation's behavior, which is anchored on __FOR_EACH__.
         aggr_query = (
