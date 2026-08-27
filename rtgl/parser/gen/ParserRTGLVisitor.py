@@ -24,8 +24,28 @@ class ParserRTGLVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
-    # Visit a parse tree produced by ParserRTGL#for_each.
-    def visitFor_each(self, ctx:ParserRTGL.For_eachContext):
+    # Visit a parse tree produced by ParserRTGL#common_path_exprs.
+    def visitCommon_path_exprs(self, ctx:ParserRTGL.Common_path_exprsContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by ParserRTGL#common_path_expr.
+    def visitCommon_path_expr(self, ctx:ParserRTGL.Common_path_exprContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by ParserRTGL#path_node.
+    def visitPath_node(self, ctx:ParserRTGL.Path_nodeContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by ParserRTGL#for_each_tmp.
+    def visitFor_each_tmp(self, ctx:ParserRTGL.For_each_tmpContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by ParserRTGL#for_each_stat.
+    def visitFor_each_stat(self, ctx:ParserRTGL.For_each_statContext):
         return self.visitChildren(ctx)
 
 
@@ -39,11 +59,6 @@ class ParserRTGLVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
-    # Visit a parse tree produced by ParserRTGL#assuming.
-    def visitAssuming(self, ctx:ParserRTGL.AssumingContext):
-        return self.visitChildren(ctx)
-
-
     # Visit a parse tree produced by ParserRTGL#where_tmp.
     def visitWhere_tmp(self, ctx:ParserRTGL.Where_tmpContext):
         return self.visitChildren(ctx)
@@ -51,6 +66,11 @@ class ParserRTGLVisitor(ParseTreeVisitor):
 
     # Visit a parse tree produced by ParserRTGL#where_stat.
     def visitWhere_stat(self, ctx:ParserRTGL.Where_statContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by ParserRTGL#assuming.
+    def visitAssuming(self, ctx:ParserRTGL.AssumingContext):
         return self.visitChildren(ctx)
 
 
@@ -116,6 +136,41 @@ class ParserRTGLVisitor(ParseTreeVisitor):
 
     # Visit a parse tree produced by ParserRTGL#aggregation_stat.
     def visitAggregation_stat(self, ctx:ParserRTGL.Aggregation_statContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by ParserRTGL#sql_injection_tmp.
+    def visitSql_injection_tmp(self, ctx:ParserRTGL.Sql_injection_tmpContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by ParserRTGL#sql_injection_stat.
+    def visitSql_injection_stat(self, ctx:ParserRTGL.Sql_injection_statContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by ParserRTGL#fkey_col_to_pkey_table.
+    def visitFkey_col_to_pkey_table(self, ctx:ParserRTGL.Fkey_col_to_pkey_tableContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by ParserRTGL#fkey_table_to_fkey_col.
+    def visitFkey_table_to_fkey_col(self, ctx:ParserRTGL.Fkey_table_to_fkey_colContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by ParserRTGL#table_tmp.
+    def visitTable_tmp(self, ctx:ParserRTGL.Table_tmpContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by ParserRTGL#table_stat.
+    def visitTable_stat(self, ctx:ParserRTGL.Table_statContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by ParserRTGL#column.
+    def visitColumn(self, ctx:ParserRTGL.ColumnContext):
         return self.visitChildren(ctx)
 
 

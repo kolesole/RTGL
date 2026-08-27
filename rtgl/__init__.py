@@ -1,9 +1,5 @@
-"""RTGL: A Framework for Relational Task Generation Language."""
+"""RTGL: Framework providing Relational Task Generation Language."""
 
-from rtgl import base
-from rtgl import converter
-from rtgl import parser
-from rtgl import validator
-from rtgl import visitor
+from rtgl import base, converter, parser, validator, visitor
 
 __all__ = ["base", "converter", "parser", "validator", "visitor"]

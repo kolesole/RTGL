@@ -5,12 +5,12 @@
 lexer grammar LexerRTGL ;
 
 // ============================================================================
-// MAIN FUNCTION KEYWORDS
+// MAIN KEYWORDS
 // ============================================================================
 
-ASSUMING                                          
-    : 'ASSUMING' 
-    | 'assuming'    
+WITH
+    : 'WITH' 
+    | 'with'
     ;
 FOR_EACH
     : ('FOR' | 'for') WS+ ('EACH' | 'each')
@@ -22,6 +22,14 @@ PREDICT
 WHERE
     : 'WHERE' 
     | 'where'
+    ;
+ASSUMING                                          
+    : 'ASSUMING' 
+    | 'assuming'    
+    ;
+AS
+    : 'AS'
+    | 'as'
     ;
 CLASSIFY
     : 'CLASSIFY' 
@@ -157,11 +165,29 @@ OPEN_PAREN
 CLOSE_PAREN 
     : ')' 
     ;
+OPEN_BRACKET
+    : '['
+    ;
+CLOSE_BRACKET
+    : ']'
+    ;
+OPEN_BRACE
+    : '{'
+    ;
+CLOSE_BRACE
+    : '}'
+    ;
 STAR
     : '*'
     ;
 SEMICOLON
     : ';'
+    ;
+ARROW
+    : '->'
+    ;
+COLON
+    : ':'
     ;
 
 // ============================================================================
@@ -221,17 +247,22 @@ STRING
     | DOUBLE_QUOTE (~['\\\r\n] | BACKSLASH .)* DOUBLE_QUOTE
     ;
 
-// Identifiers (variable names, table names, column names)
+// Identifiers (variable names, table names, column names, etc.)
 ID        
     : [a-zA-Z_] [a-zA-Z_0-9]*
-    ; 
+    ;
+
+// Body of SQL injection
+SQL_INJECTION_BODY
+    : OPEN_BRACKET (~']' | SQL_INJECTION_BODY)* CLOSE_BRACKET
+    ;
 
 // ============================================================================
 // WHITESPACE AND CATCH-ALL
 // ============================================================================
 
 WS_SKIP        
-    : WS+ -> skip 
+    : WS+ -> channel(HIDDEN)
     ;
 
 // Catch-all for any unrecognized character

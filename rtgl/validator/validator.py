@@ -3,8 +3,9 @@
 from abc import ABC, abstractmethod
 from enum import Enum, StrEnum, auto
 
-from rtgl.base import Database, Table
-from rtgl.validator.error import ErrorCollector
+from rtgl.base import DatabaseExplorer
+from rtgl.base.path_builder import Path, PathBuilder
+from rtgl.validator.diagnostics import IssueCollector
 from rtgl.visitor import ParsedValue
 
 # aggregation types that can be used with numeric conditions
@@ -49,22 +50,25 @@ class Validator(ABC):
     Provides common validation logic for both static and temporal queries.
     """
 
-    def __init__(self, collector: ErrorCollector, db: Database) -> None:
-        """Initializes the validator with an error collector and database.
+    def __init__(self, collector: IssueCollector, db_explorer: DatabaseExplorer, path_builder: PathBuilder) -> None:
+        r"""Initialize the validator with an error collector, database explorer, and path builder.
 
         Args:
-            collector (ErrorCollector): *`ErrorCollector`* to accumulate validation errors.
-            db (Database): *`Database`* instance containing schema information.
+            collector (IssueCollector): *`IssueCollector`* to accumulate validation errors.
+            db_explorer (DatabaseExplorer): *`DatabaseExplorer`* used to resolve table/column
+                names and look up CTE/SQL-injection relations.
+            path_builder (PathBuilder): *`PathBuilder`* used to resolve joins and CPEs.
 
         Returns:
             out (None):
         """
         self.collector = collector
-        self.db = db
+        self.db_explorer = db_explorer
+        self.path_builder = path_builder
 
     @abstractmethod
     def validate(self, query_dict: dict) -> None:
-        """Top-level validation entry point.
+        r"""Top-level validation entry point.
 
         Note:
             For explanation of the validation process, see concrete subclasses.
@@ -73,7 +77,7 @@ class Validator(ABC):
 
     @abstractmethod
     def validate_query(self, query: ParsedValue) -> None:
-        r"""Validates the entire query structure.
+        r"""Validate the entire query structure.
 
         Note:
             For explanation of the validation process, see concrete subclasses.
@@ -82,26 +86,176 @@ class Validator(ABC):
 
     @abstractmethod
     def validate_aggregation(self, aggr: ParsedValue, ptable_name: str, context: AggrContext) -> None:
-        r"""Validates an aggregation expression.
+        r"""Validate an aggregation expression.
 
         Note:
             For explanation of the validation process, see concrete subclasses.
         """
         pass
 
-    @abstractmethod
     def validate_id_dot_id(
         self, table_token: ParsedValue, column_token: ParsedValue, ptable_name: str, context: IdDotIdContext
     ) -> None:
-        r"""Validates a table.column reference.
+        r"""Validate a table.column reference.
 
-        Note:
-            For explanation of the validation process, see concrete subclasses.
+        Check that the table exists, is connected to the parent table, and that the column
+        exists in that table. Identical for static and temporal queries.
+
+        Args:
+            table_token (ParsedValue): Parsed table name.
+            column_token (ParsedValue): Parsed column name.
+            ptable_name (str): Name of the parent table.
+            context (IdDotIdContext): Context where this reference appears.
+
+        Returns:
+            out (None):
         """
-        pass
+        table_name = table_token.value
+
+        # check table existence
+        if (
+            not (orig_name := self.path_builder.find_orig_src_table(table_name))
+            and not self.db_explorer.find_table(table_name)
+        ):
+            self.collector.add_error(
+                line=table_token.line,
+                column=table_token.column,
+                msg=f"Table/Path '{table_name}' in {context} does not exist"
+            )
+
+        # check table relationship with parent
+        if context == IdDotIdContext.FROM_TMP_AGGR:
+            if not self._has_conn_with_parent_table(table_token.value, ptable_name, only_temporal=True):
+                self.collector.add_error(
+                    line=table_token.line,
+                    column=table_token.column,
+                    msg=(
+                        f"Table '{orig_name}' in temporal aggregation has no time column, and neither does "
+                        f"any table on its path to parent table '{ptable_name}' (other than the parent table "
+                        "itself); a temporal aggregation requires a time-aware table to apply its time window to"
+                    )
+                )
+        elif not self._has_conn_with_parent_table(table_name, ptable_name):
+            self.collector.add_error(
+                line=table_token.line,
+                column=table_token.column,
+                msg=(
+                    f"Table '{orig_name}' in {context} is not connected (path does not exist) "
+                    f"to parent table '{ptable_name}'"
+                )
+            )
+
+        column_name = column_token.value
+
+        # check column existence
+        if not self.db_explorer.find_column(orig_name, column_name):
+            self.collector.add_error(
+                line=column_token.line,
+                column=column_token.column,
+                msg=f"Column '{column_name}' in {context} does not exist in table '{orig_name}'"
+            )
+
+        # FOR EACH requires a primary key column
+        if context == IdDotIdContext.FROM_FOR_EACH:
+            if orig_name != table_name:
+                self.collector.add_error(
+                    line=table_token.line,
+                    column=table_token.column,
+                    msg=f"Path '{table_name}' cannot be used in {context}; a direct table reference is required"
+                )
+
+            if not (pkey := self.db_explorer.find_pkey(orig_name)):
+                self.collector.add_error(
+                    line=column_token.line,
+                    column=column_token.column,
+                    msg=f"Table '{orig_name}' in {context} does not have a primary key column, which is required"
+                )
+
+            if pkey and column_name != "*" and pkey != column_name:
+                self.collector.add_error(
+                    line=column_token.line,
+                    column=column_token.column,
+                    msg=f"Column '{column_name}' in {context} is not a primary key column of table '{orig_name}'"
+                )
+
+    def validate_predefined_paths(self, predefined_paths: dict) -> None:
+        r"""Validate Common Path Expressions (CPEs) declared in a `WITH ... AS (...)` clause.
+
+        Args:
+            predefined_paths (dict): Mapping of CPE alias (*`ParsedValue`*) to its declared
+                hops, as parsed from the query.
+
+        Returns:
+            out (None):
+        """
+        for path_alias, _ in predefined_paths.items():
+            if not self.path_builder.is_path_correct(path_alias.value):
+                self.collector.add_error(
+                    line=path_alias.line,
+                    column=path_alias.column,
+                    msg=f"Predefined path '{path_alias.value}' is invalid or does not exist"
+                )
+
+    def validate_injections(self, injections: dict) -> None:
+        r"""Validate the declared keys of SQL injections used in the query.
+
+        Checks that every table an injection's foreign keys reference actually exists, that a
+        primary key is specified whenever other tables declare a foreign key into the
+        injection, and that those referencing columns exist.
+
+        Args:
+            injections (dict): List of parsed SQL-injection tuples, as collected by the visitor.
+
+        Returns:
+            out (None):
+        """
+        for injection in injections:
+            name, pkey_col, fkey_col_to_pkey_table, fkey_table_to_fkey_col = injection[1:5]
+
+            for fkey_col, pkey_table in fkey_col_to_pkey_table.items():
+                if not self.db_explorer.find_table(pkey_table.value):
+                    self.collector.add_error(
+                        line=pkey_table.line,
+                        column=pkey_table.column,
+                        msg=(
+                            f"Foreign key column '{fkey_col.value}' of SQL-injection '{name.value}' references "
+                            f"non-existent table '{pkey_table.value}'"
+                        )
+                    )
+
+            if not pkey_col and fkey_table_to_fkey_col:
+                self.collector.add_error(
+                    line=name.line,
+                    column=name.column,
+                    msg=(
+                        f"SQL-injection '{name.value}' is referenced by foreign keys from other tables but "
+                        "has no primary key column specified"
+                    )
+                )
+
+            for fkey_table, fkey_col in fkey_table_to_fkey_col.items():
+                if not self.db_explorer.find_table(fkey_table.value):
+                    self.collector.add_error(
+                        line=fkey_table.line,
+                        column=fkey_table.column,
+                        msg=(
+                            f"Table '{fkey_table.value}' declared as referencing SQL-injection "
+                            f"'{name.value}' does not exist"
+                        )
+                    )
+
+                if not self.db_explorer.find_column(fkey_table.value, fkey_col.value):
+                    self.collector.add_error(
+                        line=fkey_col.line,
+                        column=fkey_col.column,
+                        msg=(
+                            f"Column '{fkey_col.value}' declared as referencing SQL-injection '{name.value}' "
+                            f"does not exist in table '{fkey_table.value}'"
+                        )
+                    )
 
     def validate_for_each(self, for_each: ParsedValue) -> str | None:
-        r"""Validates FOR EACH clause and returns the parent table name.
+        r"""Validate the FOR EACH clause and return the parent table name.
 
         Args:
             for_each (ParsedValue): Parsed FOR EACH clause.
@@ -126,12 +280,16 @@ class Validator(ABC):
 
         return table_name
 
-    def validate_predict(self, predict: ParsedValue, ptable_name: str) -> None:
-        r"""Validates PREDICT clause.
+    def validate_predict(self, predict: ParsedValue, ptable_name: str, stat: bool = False) -> None:
+        r"""Validate PREDICT clause.
 
         Args:
             predict (ParsedValue): Parsed PREDICT clause.
             ptable_name (str): Name of the parent table.
+            stat (bool): Whether any aggregation conditions in this PREDICT are static
+                aggregations (e.g. inside a `where_stat`, which never embeds a temporal
+                aggregation regardless of whether the outer query is static or temporal).
+                Default=False.
 
         Returns:
             out (None):
@@ -147,12 +305,12 @@ class Validator(ABC):
                 self.validate_aggregation(aggr, ptable_name, AggrContext.FROM_PREDICT)
 
                 aggr_dict = aggr.value
-                aggr_type = aggr_dict["AggrType"].value
+                aggr_type = aggr_dict["AggrType"].value.lower()
 
                 # LIST_DISTINCT is the only aggregation that supports CLASSIFY and RANK_TOP
-                if aggr_type.lower() != "list_distinct":
+                if aggr_type != "list_distinct":
                     if classify_token := predict_dict["Classify"]:
-                        self.collector.val_error(
+                        self.collector.add_error(
                             line=classify_token.line,
                             column=classify_token.column,
                             msg=(
@@ -162,7 +320,7 @@ class Validator(ABC):
                         )
 
                     if rank_top_token := predict_dict["RankTop"]:
-                        self.collector.val_error(
+                        self.collector.add_error(
                             line=rank_top_token.line,
                             column=rank_top_token.column,
                             msg=(
@@ -175,14 +333,14 @@ class Validator(ABC):
                 if k_token := predict_dict["K"]:
                     k = int(k_token.value)
                     if k <= 0:
-                        self.collector.val_error(
+                        self.collector.add_error(
                             line=k_token.line,
                             column=k_token.column,
                             msg=f"K in RANK_TOP K must be a positive integer, found {k}"
                         )
             case "expr":
                 # validate boolean expression in PREDICT
-                self.validate_expr(predict_dict["Expr"], ptable_name, AggrContext.FROM_PREDICT)
+                self.validate_expr(predict_dict["Expr"], ptable_name, AggrContext.FROM_PREDICT, stat)
             case "id_dot_id":
                 # static queries can predict table.column directly
                 table_token = predict_dict["Table"]
@@ -193,14 +351,16 @@ class Validator(ABC):
                 pass
 
     def validate_where(self, where: ParsedValue, ptable_name: str, stat: bool = False) -> None:
-        r"""Validates WHERE clause.
+        r"""Validate WHERE clause.
 
-        Just passes the context to `validate_expr` function.
+        Delegates to `validate_expr` with `AggrContext.FROM_WHERE`.
 
         Args:
             where (ParsedValue): Parsed WHERE clause.
             ptable_name (str): Name of the parent table.
-            stat (bool): Whether this is a static query or temporal query
+            stat (bool): Whether any aggregation conditions in this WHERE are static
+                aggregations (e.g. inside a `where_stat`, which never embeds a temporal
+                aggregation regardless of whether the outer query is static or temporal).
                 Default=False.
 
         Returns:
@@ -216,13 +376,15 @@ class Validator(ABC):
     def validate_expr(
         self, expr: ParsedValue | dict, ptable_name: str, context: AggrContext, stat: bool = False
     ) -> None:
-        r"""Validates a boolean expression (recursively handles AND/OR).
+        r"""Validate a boolean expression (recursively handles AND/OR).
 
         Args:
             expr (ParsedValue | dict): Parsed expression to validate.
             ptable_name (str): Name of the parent table.
             context (AggrContext): Context where the expression appears.
-            stat (bool): Whether this is a static query or temporal query
+            stat (bool): Whether any aggregation conditions in this expression are static
+                aggregations (e.g. inside a `where_stat`, which never embeds a temporal
+                aggregation regardless of whether the outer query is static or temporal).
                 Default=False.
 
         Returns:
@@ -236,8 +398,8 @@ class Validator(ABC):
 
         # if expression has an operator (AND/OR), recursively validate both sides
         if isinstance(expr_dict, dict) and "Op" in expr_dict:
-            self.validate_expr(expr_dict["LeftExpr"], ptable_name, context)
-            self.validate_expr(expr_dict["RightExpr"], ptable_name, context)
+            self.validate_expr(expr_dict["LeftExpr"], ptable_name, context, stat)
+            self.validate_expr(expr_dict["RightExpr"], ptable_name, context, stat)
         else:
             # base case: validate a single condition
             if isinstance(expr_dict, dict):
@@ -248,15 +410,17 @@ class Validator(ABC):
     def validate_condition(
         self, condition: ParsedValue, ptable_name: str, context: AggrContext, stat: bool = False
     ) -> None:
-        r"""Validates a single condition.
+        r"""Validate a single condition.
 
-        Ensures that aggregation types are compatible with the comparison operators.
+        Ensure that aggregation types are compatible with the comparison operators.
 
         Args:
             condition (ParsedValue): Parsed condition to validate.
             ptable_name (str): Name of the parent table.
             context (AggrContext): Context where the condition appears.
-            stat (bool): Whether this is a static query or temporal query
+            stat (bool): Whether an aggregation in this condition is a static aggregation
+                (e.g. inside a `where_stat`, which never embeds a temporal aggregation
+                regardless of whether the outer query is static or temporal).
                 Default=False.
 
         Returns:
@@ -276,27 +440,27 @@ class Validator(ABC):
                 else:
                     self.validate_aggregation(aggr, ptable_name, context)
                 aggr_dict = aggr.value
-                aggr_type = aggr_dict["AggrType"].value
+                aggr_type = aggr_dict["AggrType"].value.lower()
 
-                # Validate that the aggregation type is compatible with the condition type
+                # validate that the aggregation type is compatible with the condition type
                 match cond_dict["CType"]:
                     case "num":
-                        if aggr_type.lower() not in AGGR_NUM_COND:
-                            self.collector.val_error(
+                        if aggr_type not in AGGR_NUM_COND:
+                            self.collector.add_error(
                                 line=condition.line,
                                 column=condition.column,
                                 msg=f"Aggregation type '{aggr_type}' cannot be used in numeric condition"
                             )
                     case "str":
-                        if aggr_type.lower() not in AGGR_STR_COND:
-                            self.collector.val_error(
+                        if aggr_type not in AGGR_STR_COND:
+                            self.collector.add_error(
                                 line=condition.line,
                                 column=condition.column,
                                 msg=f"Aggregation type '{aggr_type}' cannot be used in string condition"
                             )
                     case "null":
-                        if aggr_type.lower() not in AGGR_NULL_COND:
-                            self.collector.val_error(
+                        if aggr_type not in AGGR_NULL_COND:
+                            self.collector.add_error(
                                 line=condition.line,
                                 column=condition.column,
                                 msg=f"Aggregation type '{aggr_type}' cannot be used in NULL condition"
@@ -312,7 +476,7 @@ class Validator(ABC):
                 pass
 
     def validate_stat_aggregation(self, aggr: ParsedValue, ptable_name: str) -> None:
-        r"""Validates a static aggregation.
+        r"""Validate a static aggregation.
 
         Args:
             aggr (ParsedValue): Parsed aggregation to validate.
@@ -331,6 +495,16 @@ class Validator(ABC):
 
         # validate WHERE clause inside the aggregation if present
         if where := aggr_dict["Where"]:
+            if not self.db_explorer.find_pkey(table_token.value) and not where.value["IsSimple"]:
+                self.collector.add_error(
+                    line=table_token.line,
+                    column=table_token.column,
+                    msg=(
+                        f"Table '{table_token.value}' in static aggregation does not have a primary key column, "
+                        "which is required for non-simple WHERE filtering (when the WHERE clause references "
+                        "tables other than the aggregation's own table)"
+                    )
+                )
             self.validate_where(where, table_token.value, stat=True)
 
         # validate table.column in the aggregation
@@ -338,121 +512,81 @@ class Validator(ABC):
 
     ################## Helper methods ##################
 
-    def _get_table(self, table_name: str) -> Table | None:
-        r"""Retrieves *`Table`* object from the database using table name (case-insensitive).
+    def _format_path(self, table_name: str, path: Path) -> str:
+        r"""Render a join path as a human-readable `table.key -> table.key -> ...` chain.
 
         Args:
-            table_name (str): Name of the table to retrieve.
+            table_name (str): Name of the table the path starts from.
+            path (Path): Join path, as returned by `PathBuilder.build_paths`.
 
         Returns:
-            out (Table | None): *`Table`* object corresponding to the given name, or None if not found.
+            out (str): The path rendered with each hop's join column attached to whichever
+                table owns it (e.g. `orders.user_id -> users`). A table sitting between two
+                hops that each contribute a different key shows both, e.g. `reviews.product_id/user_id`.
         """
-        if not (table_dict := self.db.table_dict):
-            return None
+        tables = [table_name] + [table for _, table, _ in path]
+        keys = [[] for _ in tables]
 
-        # k ... name of the table
-        # v ... Table object
-        for k, v in table_dict.items():
-            if k.lower() == table_name.lower():
-                return v
+        for i, (fk, _, edge_type) in enumerate(path):
+            if edge_type == "f":
+                left_key = fk
+                right_key = self.db_explorer.find_pkey(tables[i+1])
+            else:
+                left_key = self.db_explorer.find_pkey(tables[i])
+                right_key = fk
 
-        return None
+            if left_key and left_key not in keys[i]:
+                keys[i].append(left_key)
 
-    def _get_pkey_col(self, table_name: str) -> str | None:
-        r"""Retrieves the primary key column name of a table (case-insensitive).
+            if right_key and right_key not in keys[i+1]:
+                keys[i+1].append(right_key)
 
-        Args:
-            table_name (str): Name of the table to check.
+        labels = [f"{table}.{':'.join(fks)}" if fks else table for table, fks in zip(tables, keys, strict=False)]
 
-        Returns:
-            pkey_col (str | None): Name of the primary key column, or None if no primary key or table not found.
-        """
-        if not (table := self._get_table(table_name)):
-            return None
+        return " -> ".join(labels)
 
-        return table.pkey_col
-
-    def _is_table_in_db(self, table_name: str) -> bool:
-        r"""Checks if a table exists in the database (case-insensitive).
-
-        Args:
-            table_name (str): Name of the table to check.
-
-        Returns:
-            out (bool): True if the table exists, False otherwise.
-        """
-        table = self._get_table(table_name)
-
-        return table is not None
-
-    def _is_column_in_table(self, table_name: str, column_name: str) -> bool:
-        r"""Checks if a column exists in a table (case-insensitive).
-
-        Args:
-            table_name (str): Name of the table.
-            column_name (str): Name of the column to check ('*' is always valid).
-
-        Returns:
-            bool: True if the column exists or is '*', False otherwise.
-        """
-        if column_name == "*":
-            return True
-
-        if not (table := self._get_table(table_name)):
-            return False
-
-        # k ... name of the column
-        return column_name.lower() in (k.lower() for k in table.df)
-
-    def _is_pkey_col(self, table_name: str, column_name: str) -> bool:
-        r"""Checks if a column is the primary key of a table (case-insensitive).
-
-        Args:
-            table_name (str): Name of the table.
-            column_name (str): Name of the column to check.
-
-        Returns:
-            bool: True if the column is the primary key, False otherwise.
-        """
-        if not (pkey_col := self._get_pkey_col(table_name)):
-            return False
-
-        return column_name == "*" or pkey_col.lower() == column_name.lower()
-
-    def _has_time_col(self, table_name: str) -> bool:
-        r"""Checks if a table has a time column (case-insensitive).
-
-        Args:
-            table_name (str): Name of the table to check.
-
-        Returns:
-            bool: True if the table has a time column, False otherwise.
-        """
-        if not (table := self._get_table(table_name)):
-            return False
-
-        return table.time_col is not None
-
-    def _has_conn_with_main_table(self, table_name: str, ptable_name: str) -> bool:
-        r"""Checks if a table is connected to the parent table via foreign key (case-insensitive).
+    def _has_conn_with_parent_table(self, table_name: str, ptable_name: str, only_temporal: bool=False) -> bool:
+        r"""Check if a table is connected to the parent table via foreign key (case-insensitive).
 
         Args:
             table_name (str): Name of the child table to check.
             ptable_name (str): Name of the parent table.
+            only_temporal (bool): If True, only consider paths that pass through at least one
+                table with a time column (see `PathBuilder.build_paths`). Default=False.
 
         Returns:
             bool: True if the table is the parent itself or has a foreign key
                 referencing it, False otherwise.
         """
-        if table_name.lower() == ptable_name.lower():
+        if table_name == ptable_name:
             return True
 
-        if not (table := self._get_table(table_name)):
-            return False
+        paths = self.path_builder.build_paths(table_name, ptable_name, only_temporal)
+        kind = "temporal " if only_temporal else ""
 
-        if not (fkey_col_to_pkey_table := table.fkey_col_to_pkey_table):
+        if len(paths) == 0:
             return False
-
-        # _k ... name of the foreign key column
-        # v ... name of the parent table that the foreign key references
-        return any(ptable_name.lower() == v.lower() for _k, v in fkey_col_to_pkey_table.items())
+        elif len(paths) == 1:
+            # an invalid predefined path resolves to an empty hop list -> not connected
+            return bool(paths[0]) and paths[0][-1][1] == ptable_name
+        else:
+            # build_paths stops after finding two paths, so paths[0] is always the shortest;
+            # if paths[1] has the same length, the shortest path itself is ambiguous (error),
+            # otherwise it is just a longer alternative and paths[0] can be used unambiguously
+            if len(paths[0]) == len(paths[1]):
+                self.collector.add_error(
+                    line=None,
+                    column=None,
+                    msg=(
+                        f"Multiple {kind}paths, with the shortest length, exist between table '{table_name}' "
+                        f"and parent table '{ptable_name}', which is ambiguous"
+                    )
+                )
+            else:
+                self.collector.add_warning(
+                    msg=(
+                        f"Table '{table_name}' has multiple {kind}paths to parent table "
+                        f"'{ptable_name}'. Using the shortest one: {self._format_path(table_name, paths[0])}"
+                    )
+                )
+            return True

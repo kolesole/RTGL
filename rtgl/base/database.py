@@ -15,11 +15,11 @@ class Database:
     """
 
     def __init__(self, table_dict: dict[str, Table]) -> None:
-        r"""Initializes *`Database`* with a dictionary of tables.
+        r"""Initialize *`Database`* with a dictionary of tables.
 
         Args:
             table_dict (dict[str, Table]): Dictionary where keys are table
-            names and values are Table objects.
+                names and values are Table objects.
 
         Returns:
             out (None):
@@ -27,7 +27,7 @@ class Database:
         self.table_dict = table_dict
 
     def __repr__(self) -> str:
-        r"""Returns a string representation of the database.
+        r"""Return a string representation of the database.
 
         Returns:
             out (str): Formatted string showing all tables in the database.
@@ -38,7 +38,7 @@ class Database:
 
     @cached_property
     def min_timestamp(self) -> pd.Timestamp | None:
-        r"""Returns the minimum timestamp across all tables in the database, if any time columns exist.
+        r"""Return the minimum timestamp across all tables in the database, if any time columns exist.
 
         Returns:
             min_timestamp (pd.Timestamp | None): Minimum timestamp across all tables, or None if no time columns.
@@ -48,7 +48,7 @@ class Database:
 
     @cached_property
     def max_timestamp(self) -> pd.Timestamp | None:
-        r"""Returns the maximum timestamp across all tables in the database, if any time columns exist.
+        r"""Return the maximum timestamp across all tables in the database, if any time columns exist.
 
         Returns:
             max_timestamp (pd.Timestamp | None): Maximum timestamp across all tables, or None if no time columns.

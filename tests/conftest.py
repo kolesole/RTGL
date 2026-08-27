@@ -9,95 +9,161 @@ from rtgl.converter import SConverter, TConverter
 
 @pytest.fixture(scope="session")
 def test_db():
-    students_data = """
-    studentId, name
-    0,         oleksii
-    1,         jakub
-    2,         karel
+    r"""The shared schema for the whole test suite: products, users, and their relations.
+
+    Relations (all foreign keys point at the parent's primary key):
+        products <- reviews     (reviews.product_id), reviews.user_id -> users   [products-users: 2 hops]
+        products <- wishlists   (wishlists.product_id), wishlists.user_id -> users [products-users: 2 hops, ties with reviews route -> ambiguous]
+        products <- carts       (carts.product_id), no time_col
+        carts <- cart_items     (cart_items.cart_id), cart_items.user_id -> users [carts-users: 2 hops, uniquely shortest]
+        products <- notes       (notes.product_id), leaf table, no time_col anywhere on its only path to products
+        products <- productMeta (productMeta.product_id, which is also productMeta's own primary
+            key -- a one-to-one extension table), no time_col
+
+    product_id=3 ("Gizmo") has no reviews/wishlists/carts/notes rows at all (empty-aggregation-window
+    case), but does have a productMeta row with a null priority (present-row-but-null-value case).
     """
-    students_df = pd.read_csv(StringIO(students_data),
+    products_data = """
+    productId, name
+    1,         Widget
+    2,         Gadget
+    3,         Gizmo
+    """
+    products_df = pd.read_csv(StringIO(products_data),
                               skipinitialspace=True,
                               na_values=['nan', 'NaN', 'NONE', ''])
-    students_table = Table(
-        df=students_df,
+    products_table = Table(
+        df=products_df,
         fkey_col_to_pkey_table=None,
-        pkey_col="studentId",
+        pkey_col="productId",
         time_col=None)
 
-    fav_subjects_data = """
-    studentId, subject,    date
-    0,         OPT,        2025-01-03
-    0,         ALG,        2025-01-12
-    1,         PRP,        2025-01-03
-    1,         P,          2025-01-12
-    2,         nan,        2025-01-03
+    users_data = """
+    userId, name
+    1,      alice
+    2,      bob
     """
-    fav_subjects_df = pd.read_csv(StringIO(fav_subjects_data),
-                               skipinitialspace=True,
-                               parse_dates=["date"],
-                               na_values=['nan', 'NaN', 'NONE', ''])
-    fav_subjects_table = Table(
-        df=fav_subjects_df,
-        fkey_col_to_pkey_table={"studentId" : "students"},
-        pkey_col=None,
-        time_col="date")
-
-    study_inf_data = """
-    studentId, studyYear, mainInterest
-    0,         3,         AI
-    1,         7,         DS
-    2,         nan,       SI
-    """
-    study_inf_df = pd.read_csv(StringIO(study_inf_data),
-                               skipinitialspace=True,
-                               na_values=['nan', 'NaN', 'NONE', ''])
-    study_inf_table = Table(
-        df=study_inf_df,
-        fkey_col_to_pkey_table={"studentId" : "students"},
-        pkey_col=None,
+    users_df = pd.read_csv(StringIO(users_data),
+                           skipinitialspace=True,
+                           na_values=['nan', 'NaN', 'NONE', ''])
+    users_table = Table(
+        df=users_df,
+        fkey_col_to_pkey_table=None,
+        pkey_col="userId",
         time_col=None)
 
-    grades_data = """
-    gradeId, studentId, grade, date
-    0,       0,         1,     2025-01-02
-    1,       0,         1,     2025-01-05
-    2,       0,         2,     2025-01-06
-    3,       0,         2,     2025-01-07
-    4,       0,         2,     2025-01-08
-    5,       0,         nan,   2025-01-09
-    6,       0,         4,     2025-01-16
-    7,       1,         2,     2025-01-05
-    8,       1,         1,     2025-01-15
-    9,       1,         1,     2025-01-16
-    10,      1,         4,     2025-01-20
-    11,      2,         nan,   2025-01-04
+    reviews_data = """
+    reviewId, productId, userId, rating, comment, reviewDate
+    1,        1,         1,      5,      OPT,     2025-02-02
+    2,        1,         2,      3,      ALG,     2025-02-04
+    3,        2,         1,      4,      PRP,     2025-02-03
+    4,        1,         1,      nan,    ITM,     2025-02-11
     """
-    grades_df = pd.read_csv(StringIO(grades_data),
-                            skipinitialspace=True,
-                            parse_dates=["date"],
-                            na_values=['nan', 'NaN', 'NONE', ''])
-    grades_table = Table(
-        df=grades_df,
-        fkey_col_to_pkey_table={"studentId" : "students"},
-        pkey_col="gradeId",
-        time_col="date")
+    reviews_df = pd.read_csv(StringIO(reviews_data),
+                             skipinitialspace=True,
+                             parse_dates=["reviewDate"],
+                             na_values=['nan', 'NaN', 'NONE', ''])
+    reviews_table = Table(
+        df=reviews_df,
+        fkey_col_to_pkey_table={"productId": "products", "userId": "users"},
+        pkey_col="reviewId",
+        time_col="reviewDate")
+
+    carts_data = """
+    cartId, productId
+    1,      1
+    2,      2
+    """
+    carts_df = pd.read_csv(StringIO(carts_data),
+                           skipinitialspace=True,
+                           na_values=['nan', 'NaN', 'NONE', ''])
+    carts_table = Table(
+        df=carts_df,
+        fkey_col_to_pkey_table={"productId": "products"},
+        pkey_col="cartId",
+        time_col=None)
+
+    cart_items_data = """
+    itemId, cartId, userId, itemDate
+    1,      1,      1,      2025-02-05
+    2,      2,      2,      2025-02-06
+    """
+    cart_items_df = pd.read_csv(StringIO(cart_items_data),
+                                skipinitialspace=True,
+                                parse_dates=["itemDate"],
+                                na_values=['nan', 'NaN', 'NONE', ''])
+    cart_items_table = Table(
+        df=cart_items_df,
+        fkey_col_to_pkey_table={"cartId": "carts", "userId": "users"},
+        pkey_col="itemId",
+        time_col="itemDate")
+
+    wishlists_data = """
+    wishlistId, productId, userId, wishlistDate
+    1,          1,         2,      2025-02-07
+    2,          2,         1,      2025-02-08
+    """
+    wishlists_df = pd.read_csv(StringIO(wishlists_data),
+                               skipinitialspace=True,
+                               parse_dates=["wishlistDate"],
+                               na_values=['nan', 'NaN', 'NONE', ''])
+    wishlists_table = Table(
+        df=wishlists_df,
+        fkey_col_to_pkey_table={"productId": "products", "userId": "users"},
+        pkey_col="wishlistId",
+        time_col="wishlistDate")
+
+    notes_data = """
+    noteId, productId, note
+    1,      1,         fragile
+    2,      2,         popular
+    """
+    notes_df = pd.read_csv(StringIO(notes_data),
+                           skipinitialspace=True,
+                           na_values=['nan', 'NaN', 'NONE', ''])
+    notes_table = Table(
+        df=notes_df,
+        fkey_col_to_pkey_table={"productId": "products"},
+        pkey_col="noteId",
+        time_col=None)
+
+    # one row per product (productId doubles as its own primary key and foreign key), with a
+    # nullable numeric column and a non-null string column -- for plain id_dot_id condition
+    # tests. product 3 has a null priority, mirroring the "one entity missing a value" shape.
+    product_meta_data = """
+    productId, priority, category
+    1,         3,        AI
+    2,         7,        DS
+    3,         nan,      SI
+    """
+    product_meta_df = pd.read_csv(StringIO(product_meta_data),
+                                  skipinitialspace=True,
+                                  na_values=['nan', 'NaN', 'NONE', ''])
+    product_meta_table = Table(
+        df=product_meta_df,
+        fkey_col_to_pkey_table={"productId": "products"},
+        pkey_col="productId",
+        time_col=None)
 
     table_dict = {
-        "students"    : students_table,
-        "favSubjects" : fav_subjects_table,
-        "studyInf"    : study_inf_table,
-        "grades"      : grades_table}
+        "products"    : products_table,
+        "users"       : users_table,
+        "reviews"     : reviews_table,
+        "carts"       : carts_table,
+        "cartItems"   : cart_items_table,
+        "wishlists"   : wishlists_table,
+        "notes"       : notes_table,
+        "productMeta" : product_meta_table}
 
-    db = Database(table_dict=table_dict)
-    return db
+    return Database(table_dict=table_dict)
 
-@pytest.fixture(scope="session")
-def temporal_converter(test_db):
-    timestamps = pd.to_datetime(["2025-01-01", "2025-01-10"])
-    timestamps = pd.Series(timestamps)
-
-    return TConverter(db=test_db, timestamps=timestamps)
 
 @pytest.fixture(scope="session")
 def static_converter(test_db):
     return SConverter(db=test_db)
+
+
+@pytest.fixture(scope="session")
+def temporal_converter(test_db):
+    timestamps = pd.Series(pd.to_datetime(["2025-02-01", "2025-02-10"]))
+    return TConverter(db=test_db, timestamps=timestamps)
