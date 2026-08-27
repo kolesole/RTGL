@@ -143,22 +143,9 @@ When the relationship you need *is* already declared and the difficulty is only 
 The [`post-post-related`](../experiments/03-sql-injections.ipynb#post-post-related) task is the clearest illustration.
 It asks which existing posts users will link a given post to, which means relating `posts` to itself through the `postLinks` bridge table:
 
-```mermaid
-flowchart LR
-    P1(["📝 posts (source)"])
-    P2(["📝 posts (target)"])
-
-    L("🔗 postLinks")
-
-    P1 -->|PostId| L
-    L -->|RelatedPostId| P2
-
-    classDef highlightTable fill:#ecfdf5,stroke:#10b981,stroke-width:2px,color:#047857,font-weight:bold
-
-    class P1,P2,L highlightTable
-
-    linkStyle 0,1 stroke:#10b981,stroke-width:3px
-```
+<p align="center">
+  <img src="./assets/cpe_is_better_example.svg" alt="CPE Is Better" width="600">
+</p>
 
 *Both foreign keys of `postLinks` point at the same table, so the route has to be named rather than searched for.*
 

@@ -49,36 +49,9 @@ The clearest way to see why CPEs exist is to watch automatic resolution fail on 
 Take `rel-f1` dataset from **RelBench** and its [`driver-circuit-compete`](../experiments/02-common-path-expressions.ipynb#driver-circuit-compete) task, which asks which circuits a driver will compete on in the coming year.
 Answering it means connecting `circuits` to `drivers` - and the schema offers three ways to do that, all exactly the same length:
 
-```mermaid
-flowchart LR
-    C(["🏁 circuits"])
-    R("🏎️ races")
-    Res("🏆 results")
-    S("📊 standings")
-    Q("⏱️ qualifying")
-    D(["👤 drivers"])
-
-    C --> R
-    R --> Res
-    Res --> D
-
-    R -.-> S
-    S -.-> D
-
-    R -.-> Q
-    Q -.-> D
-
-    classDef startEnd fill:#f8fafc,stroke:#94a3b8,stroke-width:2px,color:#334155,font-weight:bold
-    classDef defaultTable fill:#ffffff,stroke:#cbd5e1,stroke-width:2px,color:#64748b
-    classDef highlightTable fill:#ecfdf5,stroke:#10b981,stroke-width:2px,color:#047857,font-weight:bold
-
-    %% class C,D startEnd
-    class S,Q defaultTable
-    class C,R,Res,D highlightTable
-
-    linkStyle 0,1,2 stroke:#10b981,stroke-width:3px
-    linkStyle 3,4,5,6 stroke:#fb7185,stroke-width:2px,stroke-dasharray: 4 4
-```
+<p align="center">
+  <img src="./assets/real_ambiguity_example.svg" alt="Real Ambiguity" width="600">
+</p>
 
 *Solid green marks the path the task actually needs; the dashed paths are equally short, and equally usable to a shortest-path search.*
 

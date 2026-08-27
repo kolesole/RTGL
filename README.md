@@ -147,40 +147,10 @@ The [`rtgl-tasks`](https://github.com/kolesole/rtgl-tasks) repository collects f
 
 ## 🏗️ Architecture
 
-```mermaid
-flowchart LR
-    A(["📝 RTGL Query String"])
-    G(["📝 Result: SQL Query String"])
-    I(["📊 Result: Table Object"])
+<p align="center">
+  <img src="./docs/assets/architecture.svg" alt="Architecture" width="100%">
+</p>
 
-    B("🔍 Lexer & 🌳 Parser")
-    C("🗺️ Visitor")
-    D("✅ Validator")
-    E("⚙️ Converter")
-
-    F[("🦆 DuckDB")]
-
-    A --> B
-    B -->|Parse Tree<br/>& Syntactic Checks| C
-    C -->|Dictionary| D
-    D -->|Semantic Checks| E
-
-    E -.->|execute=False| G
-    E ==>|execute=True| F
-    F --> I
-
-    classDef dataNode fill:#f8fafc,stroke:#94a3b8,stroke-width:2px,color:#334155,font-weight:bold
-    classDef engineNode fill:#eff6ff,stroke:#3b82f6,stroke-width:2px,color:#1e3a8a
-    classDef dbNode fill:#fff7ed,stroke:#f97316,stroke-width:2px,color:#9a3412,font-weight:bold
-
-    class A,G,I dataNode
-    class B,C,D,E engineNode
-    class F dbNode
-
-    linkStyle 0,1,2,3 stroke:#3b82f6,stroke-width:2px
-    linkStyle 4 stroke:#64748b,stroke-width:2px,stroke-dasharray: 4 4
-    linkStyle 5,6 stroke:#f97316,stroke-width:3px
-```
 
 ## 🔧 Development
 
