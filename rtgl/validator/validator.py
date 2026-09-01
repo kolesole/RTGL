@@ -276,7 +276,7 @@ class Validator(ABC):
             # validate that the table.column reference is valid
             self.validate_id_dot_id(table_token, column_token, table_name, IdDotIdContext.FROM_FOR_EACH)
             # validate WHERE clause
-            self.validate_where(for_each_dict["Where"], table_name)
+            self.validate_where(for_each_dict["Where"], table_name, stat=True)
 
         return table_name
 
@@ -489,6 +489,15 @@ class Validator(ABC):
             return
 
         aggr_dict = aggr.value
+
+        aggr_type = aggr_dict["AggrType"]
+        aggr_type_value = aggr_type.value.lower()
+        if aggr_type_value in ["first", "last"]:
+            self.collector.add_error(
+                line=aggr_type.line,
+                column=aggr_type.column,
+                msg=f"Aggregation type '{aggr_type_value}' is not allowed in static aggregation"
+            )
 
         table_token = aggr_dict["Table"]
         column_token = aggr_dict["Column"]

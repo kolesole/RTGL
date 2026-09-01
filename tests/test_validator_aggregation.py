@@ -8,7 +8,7 @@ from rtgl.validator.diagnostics import RTGLValidationError
 
 
 class TestAggregationConditionTypeCompatibility:
-    @pytest.mark.parametrize("aggr", ["AVG", "COUNT", "COUNT_DISTINCT", "FIRST", "LAST", "MAX", "MIN", "SUM"])
+    @pytest.mark.parametrize("aggr", ["AVG", "COUNT", "COUNT_DISTINCT", "MAX", "MIN", "SUM"])
     def test_numeric_compatible_aggregations_are_accepted_in_numeric_condition(self, static_converter, aggr):
         query = f"""
             PREDICT products.name
@@ -27,13 +27,13 @@ class TestAggregationConditionTypeCompatibility:
             static_converter.convert(query, execute=False)
 
     @pytest.mark.parametrize("aggr", ["FIRST", "LAST"])
-    def test_string_compatible_aggregations_are_accepted_in_string_condition(self, static_converter, aggr):
+    def test_string_compatible_aggregations_are_accepted_in_string_condition(self, temporal_converter, aggr):
         query = f"""
-            PREDICT products.name
+            PREDICT AVG(reviews.rating, 0, 10, DAYS)
             FOR EACH products.productId
-            WHERE {aggr}(reviews.comment) CONTAINS "P";
+            WHERE {aggr}(reviews.comment, -10, 0, DAYS) CONTAINS "P";
         """
-        static_converter.convert(query, execute=False)
+        temporal_converter.convert(query, execute=False)
 
     @pytest.mark.parametrize("aggr", ["AVG", "SUM", "COUNT"])
     def test_numeric_only_aggregations_are_rejected_in_string_condition(self, static_converter, aggr):
