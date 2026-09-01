@@ -14,9 +14,17 @@ def build_num_condition(cond_dict: dict) -> Callable[[str], str]:
         out (Callable[[str], str]): Lambda that takes a column name and returns a SQL condition string.
     """
     tmp = cond_dict["N"].value
-    n = float(tmp) if "." in tmp else int(tmp)
+
+    if "." in tmp: # float
+        n = float(tmp)
+    elif ":" in tmp: # time
+        n = f"TIMESTAMP '{tmp}'"
+    else: # int
+        n = (int(tmp))
 
     comp_op = cond_dict["CompOp"].value
+    if comp_op == "==":
+        comp_op = "="
 
     return lambda column: f"{column} {comp_op} {n}"
 

@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
 
 **RTGL (Relational Task Generation Language)** is a Python framework for writing compact, expressive
-predictive queries over relational data, with a focus on **Relational Deep Learning**.
+predictive queries over relational data, with a focus on **Relational Deep Learning**, and inspired by the proprietary **PQL** from [**KumoAI**](https://docs.nvidia.com/sdgm/rfm/overview).
 
 Defining a prediction task over relational databases usually means hand-writing SQL or pandas pipelines for entity selection, temporal joins, and label aggregation: code that is verbose, easy to get subtly wrong, and rarely reusable across tasks. 
 RTGL replaces that boilerplate: declare *what* to predict and *for whom*, and RTGL compiles the query to SQL, optionally executes it, and returns the result.
@@ -92,6 +92,10 @@ print(table.df)
 # 0   1      3
 # 1   2      0
 # 2   3      1
+
+# db can be replaced later without rebuilding the converter
+new_db = ...
+converter.set_db(new_db)
 ```
 
 ### 3. Temporal Query with `TConverter`
@@ -125,8 +129,11 @@ print(table.df)
 # 3   2  2026-08-09      0
 # 4   3  2026-08-09      1
 
-# timestamps can be replaced later without rebuilding the converter
-converter.set_timestamps(pd.Series(pd.to_datetime(["2026-10-01"])))
+# db and timestamps can be replaced later without rebuilding the converter
+new_db = ...
+converter.set_db(new_db)
+new_timestamps = ...
+converter.set_timestamps(new_timestamps)
 ```
 
 Note: User 3 has no row at `2026-07-01`: their `registration_date` (`2026-08-08`) falls after that timestamp, so RTGL excludes them automatically. 

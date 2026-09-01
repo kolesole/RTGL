@@ -103,7 +103,8 @@ class TConverter(Converter):
         if not execute:
             return sql_query
 
-        self._register_db()
+        if not self.conn:
+            self._register_db()
 
         if ptable_inf := self.cte_dict.get(ptable):
             ptable_obj, _ = ptable_inf
