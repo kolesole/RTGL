@@ -4,7 +4,7 @@ build-backend = "flit_core.buildapi"
 
 [project]
 name = "rtgl"
-version = "0.0.4"
+version = "1.0.0"
 description = "RTGL: A framework providing a Relational Task Generation Language for Relational Deep Learning"
 authors = [{ name = "Oleksii Kolesnichenko", email = "oleksii.kolesnichenko@gmail.com" }]
 readme = "README.md"
@@ -40,7 +40,7 @@ dev = [
     "rtgl[test]",
     "rtgl[notebook]",
     "antlr4-tools>=0.2.1",
-    "relbench>=1.1.0",
+    "relbench>=3.0.1",
     "tqdm>=4.66.0",
     "ruff>=0.14.10"
 ]
