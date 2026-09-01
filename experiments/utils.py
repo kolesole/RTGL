@@ -5,8 +5,7 @@ import pandas as pd
 import numpy as np
 
 from relbench.base import BaseTask, Dataset, TaskType
-from relbench.datasets import get_dataset
-from relbench.tasks import get_task
+from relbench import load_dataset
 
 from rtgl.converter import TConverter
 
@@ -14,13 +13,12 @@ from rtgl.converter import TConverter
 sys.path.append(str(Path(__file__).parent.parent))
 
 
-def get_dataset_rb(name: str, download: bool=True) -> Dataset:
-    return get_dataset(name, download)
+def load_dataset_rb(name: str) -> Dataset:
+    return load_dataset(name)
 
 
-def get_task_rb(dataset_name: str, task_name: str, download: bool=False) -> BaseTask:
-    return get_task(dataset_name, task_name, download)
-
+def load_task_rb(dataset: Dataset, task_name: str) -> BaseTask:
+    return dataset.load_task(task_name)
 
 def get_timestamps(dataset: Dataset, 
                    timedelta: pd.Timedelta, 
@@ -102,7 +100,7 @@ def check_correctness(dataset: Dataset,
                       rtgl_query: str,
                       split: str) -> None:
 
-    if task.task_type == TaskType.LINK_PREDICTION:
+    if task.task_type == TaskType.RECOMMENDATION:
         fk_col_name = task.src_entity_col
         label_col_name = task.dst_entity_col
     else:
