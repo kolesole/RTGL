@@ -521,6 +521,26 @@ class Converter(ABC):
 
         return join_query
 
+
+    def set_db(self, db: Database) -> None:
+        r"""Set the *`Database`* instance for the converter.
+
+        Args:
+            db (Database): *`Database`* instance containing the schema and data tables to be queried.
+
+        Returns:
+            out (None):
+        """
+        if self.conn:
+            try:
+                self.conn.close()
+            except Exception:
+                pass
+            finally:
+                self.conn = None
+
+        self.db = db
+
     ################## Helper methods ##################
 
     def _clear_metadata(self) -> None:
