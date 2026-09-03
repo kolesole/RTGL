@@ -2,10 +2,11 @@
 
 [![PyPI](https://img.shields.io/pypi/v/rtgl)](https://pypi.org/project/rtgl/)
 [![Python](https://img.shields.io/badge/python-3.12%2B-blue)](https://www.python.org/)
+[![arXiv](https://img.shields.io/badge/arXiv-2609.01292-b31b1b.svg)](https://arxiv.org/abs/2609.01292)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
 
 **RTGL (Relational Task Generation Language)** is a Python framework for writing compact, expressive
-predictive queries over relational data, with a focus on **Relational Deep Learning**, and inspired by the proprietary **PQL** from [**KumoAI**](https://docs.nvidia.com/sdgm/rfm/overview).
+predictive queries over relational data, with a focus on **Relational Deep Learning**, and inspired by the proprietary [**PQL**](https://docs.nvidia.com/sdgm/reference/pq-reference-overview) from [**KumoAI**](https://docs.nvidia.com/sdgm/rfm/overview).
 
 Defining a prediction task over relational databases usually means hand-writing SQL or pandas pipelines for entity selection, temporal joins, and label aggregation: code that is verbose, easy to get subtly wrong, and rarely reusable across tasks. 
 RTGL replaces that boilerplate: declare *what* to predict and *for whom*, and RTGL compiles the query to SQL, optionally executes it, and returns the result.
