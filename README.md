@@ -139,7 +139,7 @@ converter.set_timestamps(new_timestamps)
 
 Note: User 3 has no row at `2026-07-01`: their `registration_date` (`2026-08-08`) falls after that timestamp, so RTGL excludes them automatically. 
 By `2026-08-09` they exist, and a row appears. 
-See [RTGL Fundamentals](./docs/01-rtgl-fundamentals.md) for why this behaviour matters.
+See [RTGL Fundamentals](https://github.com/kolesole/RTGL/blob/main/docs/01-rtgl-fundamentals.md) for why this behaviour matters.
 
 ## 📚 Guides & Examples
 
@@ -147,16 +147,16 @@ Three guides cover the language in depth, each paired with a runnable notebook:
 
 | Guide | Notebook | Covers |
 | :--- | :--- | :--- |
-| [RTGL Fundamentals](./docs/01-rtgl-fundamentals.md) | [`01-standard-tasks.ipynb`](./experiments/01-standard-tasks.ipynb) | Query anatomy, conditions, aggregations, automatic multi-hop, temporal windows |
-| [Common Path Expressions](./docs/02-common-path-expressions.md) | [`02-common-path-expressions.ipynb`](./experiments/02-common-path-expressions.ipynb) | Explicit join paths and ambiguity resolution |
-| [SQL Injections](./docs/03-sql-injections.md) | [`03-sql-injections.ipynb`](./experiments/03-sql-injections.ipynb) | Raw SQL as a virtual table |
+| [RTGL Fundamentals](https://github.com/kolesole/RTGL/blob/main/docs/01-rtgl-fundamentals.md) | [`01-standard-tasks.ipynb`](https://github.com/kolesole/RTGL/blob/main/experiments/01-standard-tasks.ipynb) | Query anatomy, conditions, aggregations, automatic multi-hop, temporal windows |
+| [Common Path Expressions](https://github.com/kolesole/RTGL/blob/main/docs/02-common-path-expressions.md) | [`02-common-path-expressions.ipynb`](https://github.com/kolesole/RTGL/blob/main/experiments/02-common-path-expressions.ipynb) | Explicit join paths and ambiguity resolution |
+| [SQL Injections](https://github.com/kolesole/RTGL/blob/main/docs/03-sql-injections.md) | [`03-sql-injections.ipynb`](https://github.com/kolesole/RTGL/blob/main/experiments/03-sql-injections.ipynb) | Raw SQL as a virtual table |
 
 The [`rtgl-tasks`](https://github.com/kolesole/rtgl-tasks) repository collects full prediction tasks built with **RTGL** on real datasets.
 
 ## 🏗️ Architecture
 
 <p align="center">
-  <img src="./docs/assets/architecture.svg" alt="Architecture" width="100%">
+  <img src="https://raw.githubusercontent.com/kolesole/RTGL/main/docs/assets/architecture.svg" alt="Architecture" width="100%">
 </p>
 
 
@@ -204,4 +204,4 @@ ruff check .
 
 ## 📄 License
 
-**RTGL** is released under the [MIT License](./LICENSE).
+**RTGL** is released under the [MIT License](https://github.com/kolesole/RTGL/blob/main/LICENSE).
